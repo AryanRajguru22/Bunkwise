@@ -27,8 +27,8 @@ class TestApp(unittest.TestCase):
     def check_matches_infer(self, at, att, cred, temp):
         score = bm.infer({"attendance": att, "credits": cred, "temptation": temp})[-1]
         text = page_text(at)
-        self.assertIn(f"{score:.1f}<small", text)                         # raw fuzzy score
-        self.assertIn(f"<b>{bm.verdict(score)[0]}</b>", text)             # raw fuzzy verdict
+        self.assertIn(f"{score:.1f} / 100", text)                         # raw fuzzy score
+        self.assertIn(f"**{bm.verdict(score)[0]}**", text)             # raw fuzzy verdict
         self.assertIn(bm.final_recommendation(score, att)[0], text)       # final recommendation
         self.assertEqual(len(at.error) > 0, att < 75)                     # attendance banner iff < 75%
 
@@ -70,8 +70,8 @@ class TestApp(unittest.TestCase):
         score = bm.infer({"attendance": 72.0, "credits": 2.5, "temptation": 9.0})[-1]
         self.assertGreaterEqual(score, 65)                      # raw fuzzy verdict is "CAN SKIP"
         text = page_text(at)
-        self.assertIn(f"{score:.1f}<small", text)               # raw score still displayed unchanged
-        self.assertIn(f"<b>{bm.verdict(score)[0]}</b>", text)   # raw verdict still displayed
+        self.assertIn(f"{score:.1f} / 100", text)               # raw score still displayed unchanged
+        self.assertIn(f"**{bm.verdict(score)[0]}**", text)   # raw verdict still displayed
         self.assertIn(bm.BELOW_MINIMUM_TEXT, text)              # final recommendation overrides it
         self.assertEqual(len(at.error), 1)
         self.assertIn("overrides the final recommendation", at.error[0].value)
@@ -104,7 +104,7 @@ class TestApp(unittest.TestCase):
         with open(APP, encoding="utf-8") as f:
             tree = ast.parse(f.read())
         for node in tree.body:
-            if isinstance(node, ast.Assign) and node.targets[0].id == "PRESETS":
+            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "PRESETS":
                 return ast.literal_eval(node.value)
         raise AssertionError("PRESETS not found")
 

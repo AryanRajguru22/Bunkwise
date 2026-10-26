@@ -382,9 +382,9 @@ def build_content():
         ["Final recommendation", "The policy-aware answer: the fuzzy verdict, except ATTEND below 75 % attendance."],
         ["Red 75 % banner", "Explains that the mandatory-attendance constraint overrides the final recommendation when attendance is below 75 %."],
         ["Plain-English explanation", "Names the strongest active rule and centroid, built from real results."],
-        ["Tab 1 Fuzzification", "Membership degree of the input in every fuzzy set (with (a, b, c))."],
-        ["Tab 2 Active rules", "Rules with strength > 0, ranked by firing strength; expander shows all 18 rules."],
-        ["Tab 3 Aggregation & centroid", "Clip levels, Σxμ / Σμ, and the aggregated output graph with the centroid line."],
+        ["Fuzzification tab", "Membership degree of the input in every fuzzy set (with (a, b, c))."],
+        ["Active rules tab", "Rules with strength > 0, ranked by firing strength; expander shows all 18 rules."],
+        ["Aggregation & centroid tab", "Clip levels, Σxμ / Σμ, and the aggregated output graph with the centroid line."],
         ["Membership graphs tab", "Input sets with the current value and degrees marked."],
         ["Five demo scenarios", "Set the sliders and call the same `infer()`; labelled illustrative, not recommendations."],
     ], [0.34, 0.66]))
@@ -417,7 +417,7 @@ def build_content():
                             "`below_attendance_minimum`, `final_recommendation`; original matplotlib viewer kept at the bottom."],
         ["`app.py`", "Streamlit interface; calls `infer()` once per run and only displays the results."],
         ["`tests/test_bunk_meter.py`, `tests/test_app.py`", "31 algorithm tests and 7 UI-consistency tests (38 total)."],
-        ["`requirements.txt`, `.streamlit/config.toml`, `.gitignore`, `README.md`", "Dependencies, dark theme, ignored files, instructions."],
+        ["`requirements.txt`, `.streamlit/config.toml`, `.gitignore`, `README.md`", "Dependencies, warm light theme, ignored files, instructions."],
         ["`docs/`", "This guide: PDF, Markdown and the generator script."],
     ], [0.34, 0.66]))
     add(("h2", "A6. Architecture and data flow"))
@@ -910,9 +910,9 @@ def build_content():
     add(("h2", "H7. Five-minute demo script and live-demo checklist"))
     add(("ol", [
         "(0:00) Open the app: say the tagline; point to the three sliders and the *Educational decision-support tool* label.",
-        "(0:30) Default 78 / 2.5 / 8: score 83.8, CAN SKIP. Open **1 Fuzzification**: ok = 1, high temptation = 0.667.",
-        "(1:30) **2 Active rules**: exactly one rule fires, strength 0.667 (min of 1, 1, 0.667). Open the full 18-rule expander.",
-        "(2:15) **3 Aggregation & centroid**: clip level 0.667 on 'bunk', Σxμ/Σμ = 83.8; mention exact analytic centroid 83.75.",
+        "(0:30) Default 78 / 2.5 / 8: score 83.8, CAN SKIP. Open the **Fuzzification** tab: ok = 1, high temptation = 0.667.",
+        "(1:30) **Active rules** tab: exactly one rule fires, strength 0.667 (min of 1, 1, 0.667). Open the full 18-rule expander.",
+        "(2:15) **Aggregation & centroid** tab: clip level 0.667 on 'bunk', Σxμ/Σμ = 83.8; mention exact analytic centroid 83.75.",
         "(3:00) Click “Low attendance” (50 / 4 / 3): raw score falls to the 'cannot skip' zone; the final recommendation is ATTEND and the red banner appears. Show the membership graphs tab.",
         "(3:45) Click “Below 75%, score still high”: raw score 76.8 (CAN SKIP) but the final recommendation is ATTEND CLASS — BELOW MINIMUM ATTENDANCE. Explain the hard constraint applied after defuzzification and the rule-base weakness.",
         "(4:30) Move a slider live to show results and graphs update together. Close: not a probability, not ML, not validated; mention 38 tests.",
