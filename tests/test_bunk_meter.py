@@ -177,5 +177,50 @@ class TestScoresAndVerdicts(unittest.TestCase):
         self.assertTrue(bm.below_attendance_minimum(72))
 
 
+class TestFinalRecommendation(unittest.TestCase):
+    SCORES = [0, 20, 34.99, 35, 50, 64.99, 65, 76.77, 100]
+
+    def test_below_75_is_always_attend(self):
+        for att in (0, 50, 72, 74.5, 74.999):
+            self.assertTrue(bm.below_attendance_minimum(att))
+            for score in self.SCORES:
+                self.assertEqual(bm.final_recommendation(score, att)[0], bm.BELOW_MINIMUM_TEXT, (att, score))
+
+    def test_high_score_cannot_bypass_the_constraint(self):
+        att = 72
+        score = run(att, 2.5, 9)[-1]
+        self.assertEqual(bm.verdict(score)[0], "CAN SKIP THE CLASS")        # raw fuzzy verdict
+        self.assertEqual(bm.final_recommendation(score, att)[0], bm.BELOW_MINIMUM_TEXT)
+
+    def test_exactly_75_uses_normal_thresholds(self):
+        self.assertFalse(bm.below_attendance_minimum(75))
+        for score in self.SCORES:
+            self.assertEqual(bm.final_recommendation(score, 75), bm.verdict(score), score)
+
+    def test_above_75_uses_normal_thresholds(self):
+        for att in (75.5, 80, 90, 100):
+            for score in self.SCORES:
+                self.assertEqual(bm.final_recommendation(score, att), bm.verdict(score), (att, score))
+
+    def test_raw_score_is_unchanged_by_the_policy_step(self):
+        before = run(72, 2.5, 9)[-1]
+        bm.final_recommendation(before, 72)
+        after = run(72, 2.5, 9)[-1]
+        self.assertEqual(before, after)
+        self.assertAlmostEqual(before, 76.77, places=2)       # original fuzzy output, algorithm not altered
+
+    def test_invalid_arguments_are_rejected(self):
+        for bad_score in (float("nan"), float("inf"), -0.1, 100.1, "high", None):
+            with self.assertRaises(ValueError, msg=str(bad_score)):
+                bm.final_recommendation(bad_score, 80)
+        for bad_att in (float("nan"), float("inf"), -1, 100.5, "80", None, True):
+            with self.assertRaises(ValueError, msg=str(bad_att)):
+                bm.final_recommendation(50, bad_att)
+
+    def test_bool_inputs_rejected_by_infer(self):
+        with self.assertRaises(ValueError):
+            bm.infer({"attendance": True, "credits": 2, "temptation": 5})
+
+
 if __name__ == "__main__":
     unittest.main()

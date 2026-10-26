@@ -27,9 +27,10 @@ class TestApp(unittest.TestCase):
     def check_matches_infer(self, at, att, cred, temp):
         score = bm.infer({"attendance": att, "credits": cred, "temptation": temp})[-1]
         text = page_text(at)
-        self.assertIn(f"{score:.1f}<small", text)           # big score
-        self.assertIn(bm.verdict(score)[0], text)             # verdict
-        self.assertEqual(len(at.error) > 0, att < 75)         # attendance warning iff < 75%
+        self.assertIn(f"{score:.1f}<small", text)                         # raw fuzzy score
+        self.assertIn(f"<b>{bm.verdict(score)[0]}</b>", text)             # raw fuzzy verdict
+        self.assertIn(bm.final_recommendation(score, att)[0], text)       # final recommendation
+        self.assertEqual(len(at.error) > 0, att < 75)                     # attendance banner iff < 75%
 
     def test_default_render_matches_inference(self):
         at = load()
@@ -45,6 +46,7 @@ class TestApp(unittest.TestCase):
         self.assertFalse(at.exception)
         self.check_matches_infer(at, 50.0, 4.0, 3.0)
         self.assertIn("Below the mandatory 75% attendance", at.error[0].value)
+        self.assertIn(bm.BELOW_MINIMUM_TEXT, page_text(at))
 
     def test_every_preset_runs_the_same_inference(self):
         at = load()
@@ -56,14 +58,37 @@ class TestApp(unittest.TestCase):
             self.assertEqual(at.slider(key="credits").value, cred)
             self.assertEqual(at.slider(key="temptation").value, temp)
             self.check_matches_infer(at, att, cred, temp)
+            # independent expectation of the policy-aware output for each demo scenario
+            expected = bm.BELOW_MINIMUM_TEXT if att < 75 else bm.verdict(bm.infer(
+                {"attendance": att, "credits": cred, "temptation": temp})[-1])[0]
+            self.assertIn(expected, page_text(at), label)
 
-    def test_below_75_preset_with_high_score_still_warns(self):
+    def test_below_75_preset_with_high_score_is_overridden(self):
         at = load()
         at.button(key="preset_Below 75%, score still high").click()
         at.run()
         score = bm.infer({"attendance": 72.0, "credits": 2.5, "temptation": 9.0})[-1]
-        self.assertGreaterEqual(score, 65)
+        self.assertGreaterEqual(score, 65)                      # raw fuzzy verdict is "CAN SKIP"
+        text = page_text(at)
+        self.assertIn(f"{score:.1f}<small", text)               # raw score still displayed unchanged
+        self.assertIn(f"<b>{bm.verdict(score)[0]}</b>", text)   # raw verdict still displayed
+        self.assertIn(bm.BELOW_MINIMUM_TEXT, text)              # final recommendation overrides it
         self.assertEqual(len(at.error), 1)
+        self.assertIn("overrides the final recommendation", at.error[0].value)
+
+    def test_exactly_75_and_above_follow_fuzzy_verdict(self):
+        for att in (75.0, 80.0, 95.0):
+            at = load()
+            at.slider(key="attendance").set_value(att)
+            at.run()
+            self.assertFalse(at.exception)
+            self.assertEqual(len(at.error), 0, att)
+            self.check_matches_infer(at, att, 2.5, 8.0)
+            self.assertNotIn(bm.BELOW_MINIMUM_TEXT, page_text(at))
+
+    def test_no_streamlit_warnings_on_load(self):
+        at = load()
+        self.assertEqual(len(at.warning), 0)
 
     def test_active_rule_table_comes_from_inference(self):
         at = load()

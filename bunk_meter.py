@@ -9,7 +9,8 @@ Output:
     Bunk Score (0-100)                   -> attend / maybe / bunk
 
 Pipeline (Mamdani): fuzzify -> evaluate 18 rules (min) -> clip + aggregate (max)
-                    -> centroid defuzzification -> verdict.
+                    -> centroid defuzzification -> raw fuzzy verdict.
+Policy step (not fuzzy): final_recommendation() then applies the mandatory 75% attendance rule.
 
 The Streamlit app (app.py) imports this module. Running this file directly
 opens the original matplotlib slider viewer (needs matplotlib).
@@ -20,7 +21,8 @@ import math
 
 import numpy as np
 
-ATTENDANCE_MIN = 75  # mandatory attendance (%), a separate rule from the fuzzy score
+ATTENDANCE_MIN = 75  # mandatory attendance (%), a hard constraint applied AFTER fuzzy inference
+BELOW_MINIMUM_TEXT = "ATTEND CLASS — BELOW MINIMUM ATTENDANCE"
 
 # =====================================================================
 # PART 1: FUZZY LOGIC
@@ -102,7 +104,8 @@ def validate_inputs(values):
             raise ValueError(f"Missing input: {name}")
         x = values[name]
         lo, hi = cfg["range"]
-        if not isinstance(x, (int, float, np.integer, np.floating)) or not math.isfinite(x):
+        if isinstance(x, bool) or not isinstance(x, (int, float, np.integer, np.floating)) \
+                or not math.isfinite(x):
             raise ValueError(f"{name} must be a finite number, got {x!r}")
         if not lo <= x <= hi:
             raise ValueError(f"{name} must be between {lo} and {hi}, got {x}")
@@ -155,7 +158,7 @@ def infer(values):
     return fuzzy, fired, out_strength, xs, agg, defuzzify(xs, agg)
 
 def verdict(score):
-    """Map the Bunk Score to (verdict text, colour)."""
+    """RAW fuzzy verdict: map the Bunk Score to (verdict text, colour). Ignores the attendance policy."""
     if score < 35:
         return "CANNOT SKIP THE CLASS!!", "#d62728"
     if score < 65:
@@ -165,6 +168,22 @@ def verdict(score):
 def below_attendance_minimum(attendance):
     """True when attendance is under the mandatory 75% - independent of the score."""
     return attendance < ATTENDANCE_MIN
+
+def final_recommendation(score, attendance):
+    """Policy-aware recommendation: (text, colour).
+
+    The 75% attendance requirement is a hard constraint applied after defuzzification:
+    below 75% the answer is always ATTEND, whatever the fuzzy score. At 75% or above the
+    normal verdict() thresholds apply (75% is a minimum, not proof that skipping is safe).
+    The raw fuzzy score is never modified.
+    """
+    if not (isinstance(score, (int, float, np.integer, np.floating)) and math.isfinite(score)
+            and 0 <= score <= 100):
+        raise ValueError(f"score must be a finite number between 0 and 100, got {score!r}")
+    validate_inputs({"attendance": attendance, "credits": 1, "temptation": 0})  # checks attendance only
+    if below_attendance_minimum(attendance):
+        return BELOW_MINIMUM_TEXT, "#d62728"
+    return verdict(score)
 
 # =====================================================================
 # PART 2: ORIGINAL MATPLOTLIB VIEWER (optional, not used by the Streamlit app)
@@ -188,15 +207,15 @@ def draw_input(ax, name, value, memberships):
     ax.set_title(cfg["label"], fontsize=10)
     ax.legend(fontsize=7, loc="upper right", ncol=3)
 
-def draw_output(ax, out_strength, xs, agg, score):
+def draw_output(ax, out_strength, xs, agg, score, attendance):
     ax.clear()
     for (name, abc), color in zip(OUTPUT_SETS.items(), COLORS):
         ax.plot(xs, [trimf(x, *abc) for x in xs], color=color, lw=1, alpha=0.5, label=name)
     ax.fill_between(xs, agg, color="#d62728", alpha=0.35, label="aggregated output")
     ax.axvline(score, color="black", lw=2)
     ax.text(score, 1.08, f"centroid = {score:.1f}", ha="center", fontsize=9, fontweight="bold")
-    text, color = verdict(score)
-    ax.set_title(text, fontsize=18, fontweight="bold", color=color)
+    text, color = final_recommendation(score, attendance)
+    ax.set_title(text, fontsize=16, fontweight="bold", color=color)
     ax.set_xlim(0, 100); ax.set_ylim(0, 1.25)
     ax.set_xlabel("Bunk Score")
     ax.legend(fontsize=7, loc="upper left")
@@ -236,7 +255,7 @@ def main():
         fuzzy, fired, out_strength, xs, agg, score = infer(values)
         for name in INPUTS:
             draw_input(in_axes[name], name, values[name], fuzzy[name])
-        draw_output(ax_out, out_strength, xs, agg, score)
+        draw_output(ax_out, out_strength, xs, agg, score, values["attendance"])
         draw_rules(ax_rules, fired)
         fig.canvas.draw_idle()
 

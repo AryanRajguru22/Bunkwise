@@ -26,7 +26,7 @@ PRESETS = [
     ("Comfortable, heavy subject", 90.0, 4.0, 2.0, "Plenty of buffer, but a 4-credit subject and low temptation."),
     ("Low attendance", 50.0, 4.0, 3.0, "Far below 75% in a heavy subject."),
     ("Below 75%, score still high", 72.0, 2.5, 9.0,
-     "Below the mandatory 75%, yet the fuzzy score is high. The warning stays visible."),
+     "Raw fuzzy score is high, but below the mandatory 75% the final recommendation is ATTEND."),
     ("Easy subject, very safe", 95.0, 1.0, 9.0, "High attendance, but a 1-credit subject is fragile."),
 ]
 
@@ -84,7 +84,9 @@ except ValueError as err:  # sliders keep inputs valid; this guards against bad 
     st.error(f"Invalid input: {err}")
     st.stop()
 
-verdict_text, verdict_color = bm.verdict(score)
+raw_text, raw_color = bm.verdict(score)  # raw fuzzy verdict, ignores the attendance policy
+final_text, final_color = bm.final_recommendation(score, values["attendance"])
+below_minimum = bm.below_attendance_minimum(values["attendance"])
 fired = sorted(fired, reverse=True)  # strongest rule first
 
 # ---------------------------------------------------------------- results
@@ -121,19 +123,28 @@ def explanation():
 with right:
     with st.container(border=True):
         st.subheader("2 · Result")
-        st.markdown(f'<div style="{LABEL_STYLE}">Bunk Score</div>'
-                    f'<p style="font-size:4.6rem;font-weight:800;line-height:1.05;margin:0;color:{verdict_color}">'
-                    f'{score:.1f}<small style="font-size:1.2rem;font-weight:500;opacity:.6"> / 100</small></p>'
-                    f'<p style="font-size:1.5rem;font-weight:700;margin:.2rem 0 0 0;color:{verdict_color}">'
-                    f'{verdict_text}</p>', unsafe_allow_html=True)
+        # Raw fuzzy output: shown in a neutral colour so it is not mistaken for the final answer.
+        st.markdown(f'<div style="{LABEL_STYLE}">Raw fuzzy Bunk Score</div>'
+                    f'<p style="font-size:3.6rem;font-weight:800;line-height:1.05;margin:0">'
+                    f'{score:.1f}<small style="font-size:1.1rem;font-weight:500;opacity:.6"> / 100</small></p>'
+                    f'<p style="font-size:.95rem;margin:.1rem 0 0 0;opacity:.8">Fuzzy verdict (before the '
+                    f'attendance rule): <b>{raw_text}</b></p>', unsafe_allow_html=True)
         st.plotly_chart(gauge(score), width="stretch", config={"displayModeBar": False})
-        if bm.below_attendance_minimum(values["attendance"]):
-            st.error(f"**Below the mandatory {bm.ATTENDANCE_MIN}% attendance.** You are at "
-                     f"{values['attendance']:g}%. This warning is separate from the fuzzy score: a "
-                     "high score does not mean you are eligible for the end-semester examination.")
+        st.markdown(f'<div style="{LABEL_STYLE}">Final recommendation</div>'
+                    f'<p style="font-size:1.6rem;font-weight:800;margin:.1rem 0 .4rem 0;color:{final_color}">'
+                    f'{final_text}</p>', unsafe_allow_html=True)
+        if below_minimum:
+            st.error(f"**Below the mandatory {bm.ATTENDANCE_MIN}% attendance** (you are at "
+                     f"{values['attendance']:g}%). The fuzzy engine gave {score:.1f} (\"{raw_text}\"), but "
+                     "the mandatory attendance constraint overrides the final recommendation.")
+        else:
+            st.caption(f"Attendance is at or above {bm.ATTENDANCE_MIN}%, so the final recommendation "
+                       "follows the fuzzy verdict. Note that 75% is a minimum, not a guarantee that "
+                       "skipping another class is safe: BunkWise does not know your classes attended or held.")
         st.markdown(explanation())
-        st.caption("The Bunk Score is a fuzzy-logic index from 0 to 100, not a probability, and "
-                   "skipping is never guaranteed to be safe. Higher = more tolerable to skip.")
+        st.caption(f"The {bm.ATTENDANCE_MIN}% attendance requirement is a hard constraint applied after "
+                   "fuzzy inference; it never changes the raw score. The Bunk Score is a fuzzy index from "
+                   "0 to 100, not a probability. Higher = more tolerable to skip.")
 
 # ---------------------------------------------------------------- explainability
 st.write("")
@@ -185,7 +196,7 @@ with tab_out:
                                  line=dict(color=OUT_COLORS[name], width=1.5, dash="dot")))
     fig.add_trace(go.Scatter(x=xs, y=agg, mode="lines", name="aggregated output", fill="tozeroy",
                              line=dict(color="#8b7cf6", width=2), fillcolor="rgba(139,124,246,.35)"))
-    fig.add_vline(x=score, line_width=3, line_color=verdict_color,
+    fig.add_vline(x=score, line_width=3, line_color=raw_color,
                   annotation_text=f"centroid {score:.1f}", annotation_position="top")
     fig.update_layout(height=340, margin=dict(l=10, r=10, t=30, b=10), xaxis_title="Bunk Score",
                       yaxis=dict(title="Membership", range=[0, 1.15]),
@@ -217,7 +228,7 @@ with tab_graphs:
 with tab_how:
     st.markdown(
         """
-        **Mamdani fuzzy inference in four steps**
+        **Mamdani fuzzy inference in four steps, then one policy check**
 
         1. **Fuzzification** – each crisp input gets a membership degree in every fuzzy set
            (for example attendance 78% is *ok* to degree 1.0 and *danger*/*safe* to 0).
@@ -225,10 +236,16 @@ with tab_how:
            antecedent degrees (fuzzy AND). Rules with strength 0 are ignored.
         3. **Aggregation** – each output set (*attend*, *maybe*, *bunk*) is clipped at its strongest
            rule, and the clipped shapes are combined with *maximum*.
-        4. **Defuzzification** – the *centroid* (centre of area) of the combined shape is the final
-           Bunk Score. Below 35 → cannot skip, 35 to below 65 → proceed with caution, 65 or more → can skip.
+        4. **Defuzzification** – the *centroid* (centre of area) of the combined shape is the raw
+           Bunk Score. Fuzzy verdict: below 35 → cannot skip, 35 to below 65 → proceed with caution,
+           65 or more → can skip.
+        5. **Attendance rule (not fuzzy)** – the mandatory 75% attendance is a hard constraint applied
+           *after* defuzzification. Below 75% the final recommendation is always **ATTEND CLASS —
+           BELOW MINIMUM ATTENDANCE**, whatever the score; at 75% or above the fuzzy verdict is used.
+           The raw score is never changed.
 
         **Limits:** the sets and rules were written by hand, not learned from data. The score is an
-        index, not a probability, and the 75% attendance requirement is checked separately.
+        index, not a probability, and 75% is a minimum, not a guarantee that skipping is safe
+        (BunkWise does not know how many classes you attended or were held).
         """
     )
