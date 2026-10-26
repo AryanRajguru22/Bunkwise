@@ -1,1 +1,2 @@
-reportlab>=4.0   # only needed to rebuild docs/*.pdf
+reportlab>=4.0     # builds docs/*.pdf (not needed to run the app)
+matplotlib>=3.8    # supplies the DejaVu fallback font (math symbols); also runs the legacy viewer in bunk_meter.py

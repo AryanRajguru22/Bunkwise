@@ -771,7 +771,7 @@ A hiring model trained on historically biased decisions repeats them. Mitigation
 | `apply_preset(...)` (app.py) | Callback writing demo values into slider state. |
 
 
-### H4. Common mistakes and the “never say” list
+### H4. Things we must never say incorrectly (and common mistakes)
 
 > **Things we must never say incorrectly:**  
 > • “The membership degree is a probability.” — It is a degree of belonging; no randomness.  
@@ -824,7 +824,7 @@ Yes, it is a soft-computing technique in the handout: it represents vague knowle
 
 ### H6. Two-minute explanation (either of us can say this)
 
-“BunkWise is a fuzzy-logic web app that helps a student think about skipping one class. We need 75 % attendance, but the decision isn't black and white, so we model three inputs: attendance, subject credits and temptation. Each input is *fuzzified* with triangular membership functions: for example 78 % attendance is fully ‘ok’ and not ‘danger’ or ‘safe’. We wrote 18 IF–THEN rules, one for every combination, such as IF attendance is ok AND credits are moderate AND temptation is high THEN bunk. Each rule's strength is the minimum of its three degrees. Then we clip the output sets at those strengths, merge them with maximum, and take the *centroid* of the merged shape. That gives a Bunk Score from 0 to 100, and a verdict: below 35 cannot skip, up to 65 caution, above that can skip. The app shows every step — memberships, active rules, the aggregated curve — so it is fully explainable. The score is an index, not a probability, and below 75 % attendance we always show a separate warning. Nothing is trained: it is a hand-built Mamdani system, tested with 29 automated tests.”
+“BunkWise is a fuzzy-logic web app that helps a student think about skipping one class. We need 75 % attendance, but the decision isn't black and white, so we model three inputs: attendance, subject credits and temptation. Each input is *fuzzified* with triangular membership functions: for example 78 % attendance is fully ‘ok’ and not ‘danger’ or ‘safe’. We wrote 18 IF–THEN rules, one for every combination, such as IF attendance is ok AND credits are moderate AND temptation is high THEN bunk. Each rule's strength is the minimum of its three degrees. Then we clip the output sets at those strengths, merge them with maximum, and take the *centroid* of the merged shape. That gives a Bunk Score from 0 to 100, and a verdict: below 35 cannot skip, 35 up to 65 proceed with caution, 65 or above can skip. The app shows every step — memberships, active rules, the aggregated curve — so it is fully explainable. The score is an index, not a probability, and below 75 % attendance we always show a separate warning. Nothing is trained: it is a hand-built Mamdani system, tested with 29 automated tests.”
 
 
 ### H7. Five-minute demo script and live-demo checklist

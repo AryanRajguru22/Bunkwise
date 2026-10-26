@@ -843,7 +843,7 @@ def build_content():
         ["`defuzzify(xs, agg)`", "Centroid Σxμ/Σμ with the 50 fallback."], ["`verdict(score)`", "Text and colour from the 35 / 65 thresholds."],
         ["`below_attendance_minimum(att)`", "True if attendance < 75."], ["`apply_preset(...)` (app.py)", "Callback writing demo values into slider state."],
     ], [0.34, 0.66]))
-    add(("h2", "H4. Common mistakes and the “never say” list"))
+    add(("h2", "H4. Things we must never say incorrectly (and common mistakes)"))
     add(("callout", "**Things we must never say incorrectly:**\n"
                     "• “The membership degree is a probability.” — It is a degree of belonging; no randomness.\n"
                     "• “The system was trained on a dataset.” — It was not; rules and sets are hand-written.\n"
@@ -876,7 +876,7 @@ def build_content():
               "so we model three inputs: attendance, subject credits and temptation. Each input is *fuzzified* with triangular membership functions: for example 78 % attendance "
               "is fully ‘ok’ and not ‘danger’ or ‘safe’. We wrote 18 IF–THEN rules, one for every combination, such as IF attendance is ok AND credits are moderate AND temptation is high THEN bunk. "
               "Each rule's strength is the minimum of its three degrees. Then we clip the output sets at those strengths, merge them with maximum, and take the *centroid* of the merged shape. "
-              "That gives a Bunk Score from 0 to 100, and a verdict: below 35 cannot skip, up to 65 caution, above that can skip. "
+              "That gives a Bunk Score from 0 to 100, and a verdict: below 35 cannot skip, 35 up to 65 proceed with caution, 65 or above can skip. "
               "The app shows every step — memberships, active rules, the aggregated curve — so it is fully explainable. The score is an index, not a probability, and below 75 % attendance "
               "we always show a separate warning. Nothing is trained: it is a hand-built Mamdani system, tested with 29 automated tests.”"))
     add(("h2", "H7. Five-minute demo script and live-demo checklist"))

@@ -53,8 +53,8 @@ Run the tests:
 python -m unittest discover -s tests -v
 ```
 
-Rebuild the viva guide PDF (optional): `pip install -r requirements-docs.txt` then
-`python docs/generate_viva_guide.py`.
+Rebuild the viva guide PDF (optional): `pip install -r requirements-docs.txt` (ReportLab, plus matplotlib for a
+fallback font) then `python docs/generate_viva_guide.py`. It writes the PDF and the Markdown together.
 
 ## How the inference works
 
