@@ -1,25 +1,39 @@
 """
-BUNK METER - Fuzzy Logic Project (College Edition v2)
------------------------------------------------------
-Inputs (sliders):
-    1) Attendance (%)                    -> danger / ok / safe
-    2) Subject Credits (1 to 4)          -> fragile / moderate / heavy
-    3) Friends' plan temptation (0-10)   -> low / high
+BUNKWISE (BunkMeter) - Fuzzy Logic Core
+---------------------------------------
+Inputs:
+    1) Attendance (%)             0-100  -> danger / ok / safe
+    2) Subject credits            1-4    -> fragile / moderate / heavy
+    3) Temptation to skip         0-10   -> low / high
 Output:
     Bunk Score (0-100)                   -> attend / maybe / bunk
 
-Run:  python bunk_meter.py
+Pipeline (Mamdani): fuzzify -> evaluate 18 rules (min) -> clip + aggregate (max)
+                    -> centroid defuzzification -> verdict.
+
+The Streamlit app (app.py) imports this module. Running this file directly
+opens the original matplotlib slider viewer (needs matplotlib).
+
+    python bunk_meter.py
 """
+import math
+
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
+
+ATTENDANCE_MIN = 75  # mandatory attendance (%), a separate rule from the fuzzy score
 
 # =====================================================================
 # PART 1: FUZZY LOGIC
 # =====================================================================
 
 def trimf(x, a, b, c):
-    """Triangular membership function (a = start, b = peak, c = end)."""
+    """Triangular membership function (a = start, b = peak, c = end).
+
+    Degenerate triangles such as (0, 0, 75) or (80, 100, 100) are safe: the
+    `x == b` test returns 1.0 at the flat edge, and a division only happens
+    when x lies strictly between a and b (so b - a > 0) or strictly between
+    b and c (so c - b > 0).
+    """
     if x < a or x > c:
         return 0.0
     if x == b:
@@ -35,7 +49,7 @@ INPUTS = {
         "sets": {"danger": (0, 0, 75), "ok": (70, 78, 85), "safe": (80, 100, 100)},
     },
     "credits": {
-        "label": "Credits (1=Fragile, 2-3=Mod, 4=Heavy)", "range": (1, 4),
+        "label": "Subject credits (1=Fragile, 2-3=Moderate, 4=Heavy)", "range": (1, 4),
         "sets": {
             "fragile": (1, 1, 2.5),      # 1 credit: attendance drops instantly
             "moderate": (1.5, 2.5, 3.5), # 2-3 credits: the sweet spot
@@ -43,7 +57,7 @@ INPUTS = {
         },
     },
     "temptation": {
-        "label": "Importance of leave (0-10)", "range": (0, 10),
+        "label": "Temptation to skip (0-10)", "range": (0, 10),
         "sets": {"low": (0, 0, 6), "high": (4, 10, 10)},
     },
 }
@@ -53,7 +67,7 @@ OUTPUT_SETS = {"attend": (0, 0, 45), "maybe": (30, 50, 70), "bunk": (55, 100, 10
 
 # ---- Rule base: (attendance, credits, temptation) -> output ----
 RULES = [
-    # DANGER ZONE (Below 75%) - Almost everything forces "attend"
+    # DANGER ZONE (attendance below ~75%) - almost everything forces "attend"
     ("danger", "fragile",  "low",  "attend"),
     ("danger", "fragile",  "high", "attend"), # 1 class drops you deep into danger
     ("danger", "moderate", "low",  "attend"),
@@ -61,7 +75,7 @@ RULES = [
     ("danger", "heavy",    "low",  "attend"),
     ("danger", "heavy",    "high", "attend"), # Missing 4-credit material is too risky
 
-    # OK ZONE (75% - 85%) - Proceed with caution
+    # OK ZONE (set spans 70% - 85%, peak 78%) - proceed with caution
     ("ok", "fragile",  "low",  "attend"),
     ("ok", "fragile",  "high", "maybe"),      # High temptation, but 8.3% drop is scary
     ("ok", "moderate", "low",  "maybe"),
@@ -69,7 +83,7 @@ RULES = [
     ("ok", "heavy",    "low",  "attend"),
     ("ok", "heavy",    "high", "maybe"),      # Too much syllabus weight
 
-    # SAFE ZONE (Above 85%)
+    # SAFE ZONE (set starts at 80%, full membership from 100%)
     ("safe", "fragile",  "low",  "maybe"),
     ("safe", "fragile",  "high", "maybe"),    # Still cautious, buffer vanishes fast
     ("safe", "moderate", "low",  "maybe"),
@@ -78,36 +92,82 @@ RULES = [
     ("safe", "heavy",    "high", "bunk"),     # Buffer is big enough to miss a heavy class
 ]
 
+def validate_inputs(values):
+    """Raise ValueError unless every input is present, finite and in range.
+
+    NaN would otherwise slip through trimf (all comparisons are False).
+    """
+    for name, cfg in INPUTS.items():
+        if name not in values:
+            raise ValueError(f"Missing input: {name}")
+        x = values[name]
+        lo, hi = cfg["range"]
+        if not isinstance(x, (int, float, np.integer, np.floating)) or not math.isfinite(x):
+            raise ValueError(f"{name} must be a finite number, got {x!r}")
+        if not lo <= x <= hi:
+            raise ValueError(f"{name} must be between {lo} and {hi}, got {x}")
+
+def defuzzify(xs, agg):
+    """Centroid (centre of area) of the aggregated output: sum(x*mu) / sum(mu).
+
+    Fallback: if the aggregate has zero area (no rule fired) the centroid is
+    undefined, so return the neutral midpoint 50. This cannot happen for
+    validated inputs because the input sets cover their whole ranges.
+    """
+    area = agg.sum()
+    return float((xs * agg).sum() / area) if area > 0 else 50.0
+
 def infer(values):
+    """Run the full Mamdani pipeline.
+
+    Returns (fuzzy, fired, out_strength, xs, agg, score):
+      fuzzy        {input: {set: membership degree}}
+      fired        [(strength, att, credits, temptation, output)] for rules with strength > 0
+      out_strength {output set: strongest rule strength pointing at it}
+      xs, agg      output universe (401 points) and aggregated membership
+      score        centroid, 0-100
+    """
+    validate_inputs(values)
+
+    # 1) Fuzzification: crisp input -> membership degree in each set
     fuzzy = {name: {s: trimf(values[name], *abc) for s, abc in cfg["sets"].items()}
              for name, cfg in INPUTS.items()}
 
+    # 2) Rule evaluation: fuzzy AND = min of the three antecedent degrees.
+    #    Rules sharing a consequent are combined with max (clip-then-max
+    #    gives the same aggregate as max-then-clip).
     fired = []
     out_strength = {k: 0.0 for k in OUTPUT_SETS}
     for a, c, t, out in RULES:
         s = min(fuzzy["attendance"][a], fuzzy["credits"][c], fuzzy["temptation"][t])
         if s > 0:
             fired.append((s, a, c, t, out))
-        out_strength[out] = max(out_strength[out], s)
+            out_strength[out] = max(out_strength[out], s)
 
+    # 3) Implication + aggregation: clip each output set at its strength, take max
     xs = np.linspace(0, 100, 401)
     agg = np.zeros_like(xs)
     for name, s in out_strength.items():
         shape = np.array([trimf(x, *OUTPUT_SETS[name]) for x in xs])
         agg = np.maximum(agg, np.minimum(s, shape))
 
-    score = float((xs * agg).sum() / agg.sum()) if agg.sum() > 0 else 50.0
-    return fuzzy, fired, out_strength, xs, agg, score
+    # 4) Defuzzification: centroid of the aggregate
+    return fuzzy, fired, out_strength, xs, agg, defuzzify(xs, agg)
 
 def verdict(score):
+    """Map the Bunk Score to (verdict text, colour)."""
     if score < 35:
-        return "CANNOT SKIP THE CLASS!!", "#2ca02c"
+        return "CANNOT SKIP THE CLASS!!", "#d62728"
     if score < 65:
         return "PROCEED WITH CAUTION", "#ff7f0e"
-    return "CAN SKIP THE CLASS", "#d62728"
+    return "CAN SKIP THE CLASS", "#2ca02c"
+
+def below_attendance_minimum(attendance):
+    """True when attendance is under the mandatory 75% - independent of the score."""
+    return attendance < ATTENDANCE_MIN
 
 # =====================================================================
-# PART 2: VISUALIZATION (sliders + live graphs)
+# PART 2: ORIGINAL MATPLOTLIB VIEWER (optional, not used by the Streamlit app)
 # =====================================================================
 COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c"]
 
@@ -151,6 +211,9 @@ def draw_rules(ax, fired):
                 fontsize=8.5, family="monospace", transform=ax.transAxes)
 
 def main():
+    import matplotlib.pyplot as plt  # imported here so the core works without matplotlib
+    from matplotlib.widgets import Slider
+
     fig = plt.figure(figsize=(14, 8))
     fig.suptitle("BUNK METER (Fuzzy Logic - Advanced Credit Rules)", fontsize=15, fontweight="bold")
     in_axes = {
@@ -184,4 +247,5 @@ def main():
 
 if __name__ == "__main__":
     fig, sliders = main()
+    import matplotlib.pyplot as plt
     plt.show()
