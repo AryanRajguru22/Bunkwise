@@ -18,6 +18,7 @@ opens the original matplotlib slider viewer (needs matplotlib).
     python bunk_meter.py
 """
 import math
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -94,6 +95,13 @@ RULES = [
     ("safe", "heavy",    "high", "bunk"),     # Buffer is big enough to miss a heavy class
 ]
 
+# Output universe and the three output-set shapes never change, so they are computed once (same scalar
+# trimf as before: the numbers are identical, only the repeated work is gone).
+OUTPUT_XS = np.linspace(0, 100, 401)
+OUTPUT_SHAPES = {name: np.array([trimf(x, *abc) for x in OUTPUT_XS]) for name, abc in OUTPUT_SETS.items()}
+for _arr in (OUTPUT_XS, *OUTPUT_SHAPES.values()):
+    _arr.setflags(write=False)
+
 def validate_inputs(values):
     """Raise ValueError unless every input is present, finite and in range.
 
@@ -148,11 +156,10 @@ def infer(values):
             out_strength[out] = max(out_strength[out], s)
 
     # 3) Implication + aggregation: clip each output set at its strength, take max
-    xs = np.linspace(0, 100, 401)
+    xs = OUTPUT_XS
     agg = np.zeros_like(xs)
     for name, s in out_strength.items():
-        shape = np.array([trimf(x, *OUTPUT_SETS[name]) for x in xs])
-        agg = np.maximum(agg, np.minimum(s, shape))
+        agg = np.maximum(agg, np.minimum(s, OUTPUT_SHAPES[name]))
 
     # 4) Defuzzification: centroid of the aggregate
     return fuzzy, fired, out_strength, xs, agg, defuzzify(xs, agg)
@@ -184,6 +191,41 @@ def final_recommendation(score, attendance):
     if below_attendance_minimum(attendance):
         return BELOW_MINIMUM_TEXT, "#d62728"
     return verdict(score)
+
+@dataclass(frozen=True)
+class Evaluation:
+    """Everything the interface needs, produced by one run of the engine (no maths outside this module)."""
+    attendance: float
+    credits: float
+    temptation: float
+    fuzzy: dict          # {input: {set: membership degree}}
+    fired: list          # [(strength, att, credits, temptation, output)], strongest first
+    out_strength: dict   # {output set: clip level}
+    xs: np.ndarray       # output universe (401 points)
+    agg: np.ndarray      # aggregated output membership
+    score: float         # raw fuzzy Bunk Score (0-100), never modified by the attendance policy
+    raw_verdict: str     # fuzzy verdict from the thresholds 35 / 65
+    raw_colour: str
+    final_text: str      # policy-aware recommendation
+    final_colour: str
+    below_minimum: bool  # True when the hard 75% constraint overrides the fuzzy verdict
+
+    @property
+    def overridden(self):
+        """True when the final recommendation differs from the raw fuzzy verdict because of the 75% rule."""
+        return self.final_text != self.raw_verdict
+
+
+def evaluate(attendance, credits, temptation):
+    """Run the Mamdani pipeline and the separate attendance-policy step; return an Evaluation."""
+    values = {"attendance": attendance, "credits": credits, "temptation": temptation}
+    fuzzy, fired, out_strength, xs, agg, score = infer(values)
+    raw_text, raw_colour = verdict(score)
+    final_text, final_colour = final_recommendation(score, attendance)
+    return Evaluation(attendance, credits, temptation, fuzzy, sorted(fired, reverse=True), out_strength,
+                      xs, agg, score, raw_text, raw_colour, final_text, final_colour,
+                      below_attendance_minimum(attendance))
+
 
 # =====================================================================
 # PART 2: ORIGINAL MATPLOTLIB VIEWER (optional, not used by the Streamlit app)

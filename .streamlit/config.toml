@@ -13,5 +13,15 @@ borderColor = "#e4dccf"
 baseRadius = "large"
 font = "sans serif"
 
+[server]
+headless = true              # never try to open a browser or prompt for an email on a server
+enableXsrfProtection = true
+fileWatcherType = "none"     # no source watching in production
+maxUploadSize = 1            # the app has no uploads; keep the limit minimal
+
+[client]
+toolbarMode = "minimal"      # hides the Deploy / developer menu for visitors
+showErrorDetails = "none"    # never show stack traces to visitors
+
 [browser]
 gatherUsageStats = false

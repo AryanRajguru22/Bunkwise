@@ -97,6 +97,90 @@ class TestApp(unittest.TestCase):
         self.assertEqual(len(rules_df), len(fired))
         self.assertAlmostEqual(rules_df["Strength"].iloc[0], fired[0][0])
 
+    # ---------------------------------------------------------------- redesign features
+    def test_five_original_scenarios_are_preserved(self):
+        self.assertEqual([(a, b, c, d) for a, b, c, d, _ in self.presets()], [
+            ("Balanced buffer", 78.0, 2.5, 8.0),
+            ("Comfortable, heavy subject", 90.0, 4.0, 2.0),
+            ("Low attendance", 50.0, 4.0, 3.0),
+            ("Below 75%, score still high", 72.0, 2.5, 9.0),
+            ("Easy subject, very safe", 95.0, 1.0, 9.0)])
+
+    def test_main_tabs_and_download_button_exist(self):
+        at = load()
+        labels = [t.label for t in at.tabs]
+        for expected in ("Why this result", "What if?", "Compare subjects", "Inside the engine",
+                         "Fuzzification", "Active rules", "Aggregation & centroid", "Membership graphs",
+                         "About & limits"):
+            self.assertIn(expected, labels)
+        self.assertEqual(len(at.get("download_button")), 1)
+
+    def test_explanation_steps_follow_inference_and_policy(self):
+        at = load()
+        at.button(key="preset_Below 75%, score still high").click()
+        at.run()
+        text = page_text(at)
+        self.assertIn("**4. Attendance policy.**", text)
+        self.assertIn("below the mandatory 75%", text)
+        score = bm.infer({"attendance": 72.0, "credits": 2.5, "temptation": 9.0})[-1]
+        self.assertIn(f"**{score:.1f} / 100**, which the fuzzy verdict reads as", text)
+
+    def test_comparison_table_uses_engine_and_policy(self):
+        at = load()
+        cmp_df = [d.value for d in at.dataframe if "Final recommendation" in d.value.columns][0]
+        self.assertEqual(list(cmp_df["Subject"]), ["Subject A", "Subject B", "Subject C"])
+        for (_, row), (att, cred, temp) in zip(cmp_df.iterrows(), [(78, 2.5, 8), (90, 4, 2), (72, 2, 9)]):
+            ev = bm.evaluate(att, cred, temp)
+            self.assertAlmostEqual(row["Raw score"], ev.score)
+            self.assertEqual(row["Final recommendation"], ev.final_text)
+        self.assertEqual(cmp_df["Final recommendation"].iloc[2], bm.BELOW_MINIMUM_TEXT)
+
+    def test_comparison_table_never_triggers_the_policy_banner(self):
+        at = load()  # default attendance 78%: Subject C (72%) is below 75% but must not raise st.error
+        self.assertEqual(len(at.error), 0)
+
+    def test_what_if_tab_reports_thresholds_from_the_engine(self):
+        import insights
+        at = load()   # default 2.5 credits / temptation 8: already >= 65 at the 75% minimum
+        self.assertGreaterEqual(bm.evaluate(75, 2.5, 8.0).score, 65)
+        self.assertIn("already 65 or more (*can skip*) at the 75% minimum", page_text(at))
+        self.assertEqual(len(at.get("plotly_chart")), 6)  # gauge, what-if, aggregate, 3 input graphs
+        # 4 credits / temptation 8: score first reaches 65 above the minimum
+        at.slider(key="credits").set_value(4.0)
+        at.run()
+        first = insights.attendance_for_verdict(4.0, 8.0, 65)
+        self.assertEqual(first, 84.0)
+        self.assertIn(f"first reaches 65 (*can skip*) at about {first:g}% attendance", page_text(at))
+        self.assertGreaterEqual(bm.evaluate(first, 4.0, 8.0).score, 65)
+        self.assertLess(bm.evaluate(first - 0.5, 4.0, 8.0).score, 65)
+        # 1 credit / temptation 10: never reaches 65 between 75% and 100%
+        at.slider(key="credits").set_value(1.0)
+        at.slider(key="temptation").set_value(10.0)
+        at.run()
+        self.assertIn("does not reach 65 (*can skip*) at any attendance from 75% to 100%", page_text(at))
+
+    def test_bad_session_state_shows_error_and_reset(self):
+        at = AppTest.from_file(APP, default_timeout=60)
+        at.session_state["attendance"] = 150.0
+        at.run()
+        self.assertFalse(at.exception)
+        self.assertEqual(len(at.error), 1)
+        self.assertIn("Invalid input", at.error[0].value)
+        at.button[0].click()
+        at.run()
+        self.assertEqual(len(at.error), 0)
+        self.assertEqual(at.slider(key="attendance").value, 78.0)
+
+    def test_extremes_render_without_exceptions(self):
+        at = load()
+        for att, cred, temp in [(0.0, 1.0, 0.0), (100.0, 4.0, 10.0), (75.0, 1.0, 10.0), (74.5, 4.0, 0.0)]:
+            at.slider(key="attendance").set_value(att)
+            at.slider(key="credits").set_value(cred)
+            at.slider(key="temptation").set_value(temp)
+            at.run()
+            self.assertFalse(at.exception, (att, cred, temp))
+            self.check_matches_infer(at, att, cred, temp)
+
     @staticmethod
     def presets():
         # Parse PRESETS from the app source so the test follows the app without importing Streamlit UI code.

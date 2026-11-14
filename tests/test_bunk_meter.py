@@ -222,5 +222,51 @@ class TestFinalRecommendation(unittest.TestCase):
             bm.infer({"attendance": True, "credits": 2, "temptation": 5})
 
 
+class TestAllEighteenRules(unittest.TestCase):
+    """Each rule, driven at the peak of its three antecedent sets, must fire at full strength."""
+    PEAK = {"attendance": {"danger": 0, "ok": 78, "safe": 100},
+            "credits": {"fragile": 1, "moderate": 2.5, "heavy": 4},
+            "temptation": {"low": 0, "high": 10}}
+
+    def test_there_are_18_distinct_rules(self):
+        self.assertEqual(len(bm.RULES), 18)
+        self.assertEqual(len({r[:3] for r in bm.RULES}), 18)
+        self.assertTrue(all(r[3] in bm.OUTPUT_SETS for r in bm.RULES))
+
+    def test_each_rule_fires_at_its_own_peak(self):
+        for a, c, t, out in bm.RULES:
+            fuzzy, fired, out_strength, *_ = run(self.PEAK["attendance"][a], self.PEAK["credits"][c],
+                                                  self.PEAK["temptation"][t])
+            self.assertIn((1.0, a, c, t, out), fired, (a, c, t))
+            self.assertEqual(out_strength[out], 1.0)
+
+    def test_set_breakpoints_have_no_membership_gap(self):
+        """Every point of every input range belongs to at least one set (coverage), incl. all breakpoints."""
+        for cfg in bm.INPUTS.values():
+            lo, hi = cfg["range"]
+            points = {lo, hi}
+            for abc in cfg["sets"].values():
+                points.update(abc)
+            points.update(np.linspace(lo, hi, 1001))
+            for x in points:
+                self.assertGreater(max(bm.trimf(x, *abc) for abc in cfg["sets"].values()), 0, x)
+
+    def test_float_boundary_around_75(self):
+        below = np.nextafter(75.0, 0)
+        self.assertEqual(bm.final_recommendation(50.0, below)[0], bm.BELOW_MINIMUM_TEXT)
+        self.assertEqual(bm.final_recommendation(50.0, 75.0)[0], bm.verdict(50.0)[0])
+        self.assertEqual(bm.final_recommendation(90.0, 74.9999999999)[0], bm.BELOW_MINIMUM_TEXT)
+
+    def test_score_stays_between_output_set_extremes(self):
+        for att in (0, 50, 75, 100):
+            for cred in (1, 4):
+                for temp in (0, 10):
+                    self.assertTrue(0 < run(att, cred, temp)[-1] < 100)
+
+    def test_numpy_scalar_inputs_accepted(self):
+        self.assertEqual(run(np.float64(78), np.int64(2), np.float32(8))[-1],
+                         run(78, 2, 8)[-1])
+
+
 if __name__ == "__main__":
     unittest.main()
