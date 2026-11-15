@@ -56,13 +56,18 @@ def main():
         # Default state: attendance 78, credits 2.5, temptation 8
         shot(page, "app_default_top.png", ".stMain")
         crop_overview(os.path.join(OUT, "app_default_top.png"))
+        page.get_by_role("tab", name="Inside the engine").click()  # the engine sub-tabs live inside this tab
+        page.wait_for_timeout(800)
         page.get_by_role("tab", name="Aggregation & centroid").click()
         page.wait_for_timeout(1500)
         shot(page, "app_tab_aggregation.png", ".st-key-card-explain")
 
         # Policy override: attendance 72, credits 2.5, temptation 9
+        page.get_by_text("Try an example scenario").click()  # the presets live in this expander
         page.locator("button:has-text('Below 75%, score still high')").first.click()
         settle(page)
+        page.get_by_role("tab", name="Inside the engine").click()
+        page.wait_for_timeout(500)
         page.get_by_role("tab", name="Fuzzification").click()
         page.wait_for_timeout(800)
         shot(page, "app_override_final.png", ".st-key-card-final-danger")

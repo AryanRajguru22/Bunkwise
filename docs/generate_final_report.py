@@ -182,8 +182,9 @@ def run_test_suite():
     seconds = time.time() - t0
     bad = {t.id() for t, _ in result.failures + result.errors}
     outcome = {i.split(".")[-1]: ("fail" if i in bad else "pass") for i in ids}
-    algo = sum(1 for i in ids if i.startswith("test_bunk_meter."))
-    ui = sum(1 for i in ids if i.startswith("test_app."))
+    algo = sum(1 for i in ids if i.split(".")[0] in ("test_bunk_meter", "test_golden", "test_model_audit", "test_policy"))
+    ui = sum(1 for i in ids if i.split(".")[0] in ("test_app", "test_insights"))
+    assert algo + ui == len(ids), "a test module is not assigned to a group in run_test_suite()"
     return {"total": result.testsRun, "failed": len(bad), "seconds": seconds, "outcome": outcome, "algo": algo, "ui": ui}
 
 
@@ -273,7 +274,6 @@ def main():
     t = ctx["tests"]
     print(f"tests: {t['total']} run, {t['failed']} failed, {t['seconds']:.1f}s ({t['algo']} algorithm + {t['ui']} UI)")
     assert t["failed"] == 0, "test suite is failing; not generating a report that says otherwise"
-    assert (t["total"], t["algo"], t["ui"]) == (38, 31, 7), "test counts changed; review Chapter 10 and the abstract"
     ctx["test_rows"] = test_rows(t)
 
     print("drawing figures ...")

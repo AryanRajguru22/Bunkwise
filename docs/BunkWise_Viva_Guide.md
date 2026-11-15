@@ -93,7 +93,7 @@ The problem: attendance is a limited budget (75 % is mandatory), yet the decisio
 |---|---|
 | `bunk_meter.py` | Fuzzy core: `trimf`, `INPUTS`, `OUTPUT_SETS`, `RULES`, `validate_inputs`, `infer`, `defuzzify`, `verdict`, `below_attendance_minimum`, `final_recommendation`; original matplotlib viewer kept at the bottom. |
 | `app.py` | Streamlit interface; calls `infer()` once per run and only displays the results. |
-| `tests/test_bunk_meter.py`, `tests/test_app.py` | 31 algorithm tests and 7 UI-consistency tests (38 total). |
+| `tests/` (6 modules) | 89 tests in total: engine, rule base, golden values, model audit, 75% planner, presentation helpers and Streamlit UI consistency (`tests/test_bunk_meter.py`, `test_golden.py`, `test_model_audit.py`, `test_policy.py`, `test_insights.py`, `test_app.py`). |
 | `requirements.txt`, `.streamlit/config.toml`, `.gitignore`, `README.md` | Dependencies, warm light theme, ignored files, instructions. |
 | `docs/` | This guide: PDF, Markdown and the generator script. |
 
@@ -182,7 +182,7 @@ score = defuzzify(xs, agg)                                              # 4 cent
 - **Raw vs final:** the app shows the raw fuzzy score and verdict (unchanged) and, separately, `final_recommendation(score, attendance)`. Below 75 % it returns ATTEND CLASS — BELOW MINIMUM ATTENDANCE whatever the score and the red `st.error` banner explains the override; at 75 % or above it returns the fuzzy `verdict(score)`. `below_attendance_minimum(attendance)` is just `attendance < 75`.
 - **Charts and tables** are drawn from `fuzzy`, `fired`, `out_strength`, `xs`, `agg` — no recomputation, no hard-coded values.
 - **Validation:** `validate_inputs()` raises `ValueError` for missing, non-numeric, NaN/inf or out-of-range values; `app.py` catches it and shows `st.error` (the sliders already keep values valid, so this guards against bad state). Programming errors are not hidden.
-- **Tests (38):** `trimf` peaks/edges/degenerate shapes; degrees in [0,1]; validation; rule count and min-strength; max aggregation recomputed independently; centroid; zero-area fallback; scores finite in [0,100] over a grid; verdict thresholds; `final_recommendation` below, at and above 75 % (and that it leaves the raw score unchanged); and `AppTest` checks that the displayed raw score, raw verdict, final recommendation, banner and rule table match the functions after slider and preset changes.
+- **Tests (89):** `trimf` peaks/edges/degenerate shapes; degrees in [0,1]; validation; rule count and min-strength; max aggregation recomputed independently; centroid; zero-area fallback; scores finite in [0,100] over a grid; verdict thresholds; `final_recommendation` below, at and above 75 % (and that it leaves the raw score unchanged); and `AppTest` checks that the displayed raw score, raw verdict, final recommendation, banner and rule table match the functions after slider and preset changes.
 
 
 ## C. Fuzzy logic: theory from first principles
@@ -327,7 +327,7 @@ The consequent **bunk** `(55, 100, 100)` is clipped at 0.667: its rising edge μ
 | Why is the score not a probability? | It is a centroid of fuzzy sets, a degree-based index. It has no frequency interpretation and does not predict an outcome. |
 | Why is credit only a proxy? | Credits say nothing about the actual teacher, topic, test dates or how many classes remain; it is a rough indicator of importance. |
 | How subjective are the sets and rules? | Very. The positions (70/78/85, 75, 80…) and consequents were chosen by judgement. Moving a set or editing a rule changes scores; that is why we call it a demo of method, not a validated model. |
-| What if the sets or rules change? | The pipeline is unchanged but outputs shift. Few sets = coarse behaviour; many sets = more rules (rule explosion). The 38 tests would flag unexpected changes. |
+| What if the sets or rules change? | The pipeline is unchanged but outputs shift. Few sets = coarse behaviour; many sets = more rules (rule explosion). The 89 tests would flag unexpected changes. |
 | Why might the centroid not match intuition for a verdict? | Two different active rule sets can give the same centroid (e.g. any single 'maybe' → 50), and thresholds 35/65 are sharp cuts of a smooth number (scenario C). |
 | How is the zero-area case handled? | `defuzzify` returns 50 (neutral) if Σμ = 0. It is unreachable for valid inputs because every range is covered by at least one set (tested by sweeping the input space), but is kept as a safe fallback. |
 | Why apply the 75 % rule separately, after the fuzzy step? | It is a policy constraint from the handout, not a fuzzy concept. A high raw score (scenario D) must never imply eligibility, so `final_recommendation` depends only on attendance < 75 and the score. |
@@ -346,7 +346,7 @@ The consequent **bunk** `(55, 100, 100)` is clipped at 0.667: its rising edge μ
 - **Why after defuzzification?** The rules are unchanged and the raw score stays an honest, explainable output of the fuzzy system. The policy is applied on top, so we can show both and explain exactly why they differ. Editing membership functions or rules just to get a ‘nicer’ score would hide the real behaviour.
 - **Why a hard constraint?** The 75 % requirement is a crisp rule from the handout: attendance either meets it or it does not. Fuzzy logic suits vague judgement; a mandatory policy should not be softened by it. Real decision-support systems often combine soft scoring with hard rules.
 - **Below-75 % example:** attendance 72, credits 2.5, temptation 9 → raw score 76.8 (CAN SKIP) but the final recommendation is ATTEND CLASS — BELOW MINIMUM ATTENDANCE.
-- **Not claimed:** that exactly 75 % is safe to skip, or any future eligibility. BunkWise does not know classes attended or held, so it cannot compute that.
+- **Not claimed:** that exactly 75 % is safe to skip, or any future eligibility. The fuzzy engine sees only a percentage; the separate 75% planner tab computes the effect of one more absence from real classes-attended and classes-held counts.
 - **Still true:** the score is an index, not a probability, and nothing is trained: the sets and rules are hand-written.
 
 > **Honesty:** BunkWise is not empirically validated, not statistically trained and cannot predict academic outcomes. It demonstrates fuzzy inference on a relatable problem.
@@ -415,7 +415,7 @@ A slider change makes Streamlit re-run `app.py`; the script reads the slider val
 Tests recompute min, max, clipping and the centroid independently; a regression test pins the default case at 83.82, which agrees with the hand-calculated centroid 83.75 up to grid error; and AppTest confirms the UI shows exactly what `infer()` returns.
 
 **F21. How do the tests validate the implementation?**  
-38 tests cover membership boundaries and degenerate sets, validation, rule strengths, aggregation, centroid, zero-area fallback, score range, verdict thresholds, the final recommendation below/at/above 75 %, scenarios and UI/inference consistency.
+89 tests cover membership boundaries and degenerate sets, validation, rule strengths, aggregation, centroid, zero-area fallback, score range, verdict thresholds, the final recommendation below/at/above 75 %, scenarios and UI/inference consistency.
 
 **F22. What are the limitations?**  
 Hand-made sets and rules, not validated, no learning, credits only a proxy, and only the 75 % policy modelled.
@@ -490,7 +490,7 @@ Fuzzy logic gives graded advice for soft judgements; mandatory rules must hold e
 Raw fuzzy score about 76.8 (fuzzy verdict CAN SKIP THE CLASS) and final recommendation ATTEND CLASS — BELOW MINIMUM ATTENDANCE, with a banner saying the attendance constraint overrides the fuzzy result.
 
 **F46. Does exactly 75 % attendance mean it is safe to skip?**  
-No. At 75 % the normal fuzzy verdict applies, but 75 % is only a minimum. BunkWise does not know classes attended or held, so it cannot say whether one more absence keeps you eligible.
+No. At 75 % the normal fuzzy verdict applies, but 75 % is only a minimum. The fuzzy engine sees only a percentage; the separate 75% planner tab (exact arithmetic on classes attended and held) says whether one more absence keeps you at 75% or above.
 
 
 ## G. Rest of the AISC syllabus: map and question bank
@@ -761,7 +761,7 @@ A hiring model trained on historically biased decisions repeats them. Mitigation
 - **Inputs:** attendance 0–100 (danger/ok/safe), credits 1–4 (fragile/moderate/heavy), temptation 0–10 (low/high). **Output sets:** attend, maybe, bunk.
 - **Algorithm:** Mamdani. Triangular MFs → 18 rules, strength = min → clip + max-aggregate → centroid on 401 points → verdict (<35, <65, ≥65).
 - **Policy step:** `final_recommendation(score, attendance)`: below 75 % the final answer is always ATTEND CLASS — BELOW MINIMUM ATTENDANCE; the raw fuzzy score is never changed.
-- **Numbers to remember:** 3 inputs, 18 rules, 3 output sets, 401 grid points, 38 tests; default (78, 2.5, 8) → 83.8 CAN SKIP.
+- **Numbers to remember:** 3 inputs, 18 rules, 3 output sets, 401 grid points, 89 tests; default (78, 2.5, 8) → 83.8 CAN SKIP.
 - **Honest limits:** hand-made, unvalidated, not a probability, not ML.
 
 
@@ -860,7 +860,7 @@ Yes, it is a soft-computing technique in the handout: it represents vague knowle
 
 ### H6. Two-minute explanation (either of us can say this)
 
-“BunkWise is a fuzzy-logic web app that helps a student think about skipping one class. We need 75 % attendance, but the decision isn't black and white, so we model three inputs: attendance, subject credits and temptation. Each input is *fuzzified* with triangular membership functions: for example 78 % attendance is fully ‘ok’ and not ‘danger’ or ‘safe’. We wrote 18 IF–THEN rules, one for every combination, such as IF attendance is ok AND credits are moderate AND temptation is high THEN bunk. Each rule's strength is the minimum of its three degrees. Then we clip the output sets at those strengths, merge them with maximum, and take the *centroid* of the merged shape. That gives a Bunk Score from 0 to 100, and a verdict: below 35 cannot skip, 35 up to 65 proceed with caution, 65 or above can skip. The app shows every step — memberships, active rules, the aggregated curve — so it is fully explainable. The score is an index, not a probability, and below 75 % attendance the final recommendation is always ‘attend’, whatever the score. Nothing is trained: it is a hand-built Mamdani system, tested with 38 automated tests.”
+“BunkWise is a fuzzy-logic web app that helps a student think about skipping one class. We need 75 % attendance, but the decision isn't black and white, so we model three inputs: attendance, subject credits and temptation. Each input is *fuzzified* with triangular membership functions: for example 78 % attendance is fully ‘ok’ and not ‘danger’ or ‘safe’. We wrote 18 IF–THEN rules, one for every combination, such as IF attendance is ok AND credits are moderate AND temptation is high THEN bunk. Each rule's strength is the minimum of its three degrees. Then we clip the output sets at those strengths, merge them with maximum, and take the *centroid* of the merged shape. That gives a Bunk Score from 0 to 100, and a verdict: below 35 cannot skip, 35 up to 65 proceed with caution, 65 or above can skip. The app shows every step — memberships, active rules, the aggregated curve — so it is fully explainable. The score is an index, not a probability, and below 75 % attendance the final recommendation is always ‘attend’, whatever the score. Nothing is trained: it is a hand-built Mamdani system, tested with 89 automated tests.”
 
 
 ### H7. Five-minute demo script and live-demo checklist
@@ -871,7 +871,7 @@ Yes, it is a soft-computing technique in the handout: it represents vague knowle
 4. (2:15) **Aggregation & centroid** tab: clip level 0.667 on 'bunk', Σxμ/Σμ = 83.8; mention exact analytic centroid 83.75.
 5. (3:00) Click “Low attendance” (50 / 4 / 3): raw score falls to the 'cannot skip' zone; the final recommendation is ATTEND and the red banner appears. Show the membership graphs tab.
 6. (3:45) Click “Below 75%, score still high”: raw score 76.8 (CAN SKIP) but the final recommendation is ATTEND CLASS — BELOW MINIMUM ATTENDANCE. Explain the hard constraint applied after defuzzification and the rule-base weakness.
-7. (4:30) Move a slider live to show results and graphs update together. Close: not a probability, not ML, not validated; mention 38 tests.
+7. (4:30) Move a slider live to show results and graphs update together. Close: not a probability, not ML, not validated; mention 89 tests.
 
 - [ ] `streamlit run app.py` works from a fresh terminal; browser opens on localhost.
 - [ ] Tests pass: `python -m unittest discover -s tests -v`.

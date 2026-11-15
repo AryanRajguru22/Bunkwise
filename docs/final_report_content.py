@@ -91,6 +91,47 @@ TEST_AREAS = [  # (area, objective, expected behaviour, [test method names])
       "test_every_preset_runs_the_same_inference", "test_below_75_preset_with_high_score_is_overridden",
       "test_exactly_75_and_above_follow_fuzzy_verdict", "test_no_streamlit_warnings_on_load",
       "test_active_rule_table_comes_from_inference"]),
+    ("Model audit (characterisation)", "Pin the audited properties of the hand-designed model: set shapes, coverage, reachable score range, "
+     "centroid discretisation error, the high raw score just below 75 % and the documented verdict-flip limitation.",
+     "Memberships in [0, 1] with peak 1; raw score range about 14.9 to 85.1; 401-point centroid within 0.1 of a 20 001-point reference; "
+     "72 % gives raw 76.8 but final ATTEND; largest downward step with rising attendance about 1.06 points.",
+     ["test_every_set_peaks_at_one_and_stays_in_unit_interval", "test_weak_attendance_coverage_values_are_the_documented_ones",
+      "test_reachable_score_range_is_not_zero_to_hundred", "test_raw_score_is_high_just_below_75_but_final_is_attend",
+      "test_final_recommendation_below_75_is_attend_across_whole_grid",
+      "test_known_limitation_verdict_flip_with_rising_attendance", "test_centroid_discretisation_error_is_small"]),
+    ("Zero-area flag", "Check that the neutral fallback is reported through Evaluation.fallback_used instead of being silent.",
+     "False for every valid input; zero-area aggregate gives 50 and is detected.",
+     ["test_flag_is_false_for_valid_inputs", "test_zero_area_is_reported_not_silent"]),
+    ("Rule coverage and original-model regression", "Check that each of the 18 rules fires at its own peak, the sets leave no gap, "
+     "NumPy scalars and float boundaries around 75 behave, and infer() still matches values recorded from the original prototype.",
+     "Each rule reaches strength 1 at its peak; no gap at any breakpoint; scores equal the recorded golden values.",
+     ["test_each_rule_fires_at_its_own_peak", "test_float_boundary_around_75", "test_numpy_scalar_inputs_accepted",
+      "test_score_stays_between_output_set_extremes", "test_set_breakpoints_have_no_membership_gap",
+      "test_there_are_18_distinct_rules", "test_cases_are_present", "test_infer_matches_original_model"]),
+    ("75 % planner (exact arithmetic)", "Check the crisp projection from classes attended and held: exact 75 % boundary, skip and "
+     "recovery counts against a brute-force simulation for every count up to 120 classes held, invalid counts, no classes held.",
+     "3 of 4 is exactly 75 %; closed-form counts equal simulation; invalid counts raise ValueError; the fuzzy score is unaffected.",
+     ["test_exact_75_percent_meets_minimum", "test_above_and_below", "test_no_classes_held", "test_invalid_counts_rejected",
+      "test_worked_examples", "test_policy_matches_brute_force_for_all_small_counts", "test_policy_never_touches_the_fuzzy_engine"]),
+    ("Presentation helpers (insights.py)", "Check the explanation text, what-if sweep, multi-subject comparison and Markdown report "
+     "against the engine, including bad rows and HTML in names.",
+     "Every number shown comes from evaluate(); bad rows are flagged, not raised; report contains real values and the disclaimer.",
+     ["test_bad_rows_are_flagged_not_raised", "test_html_in_names_stays_plain_data", "test_names_are_trimmed_and_row_count_capped",
+      "test_valid_rows_use_engine_and_policy", "test_evaluate_matches_infer_and_policy",
+      "test_evaluation_is_immutable_and_rejects_bad_input", "test_fired_rules_sorted_strongest_first",
+      "test_output_shapes_are_read_only_and_match_trimf", "test_override_flag_only_when_policy_changes_verdict",
+      "test_four_steps_and_policy_wording", "test_scores_in_text_come_from_engine",
+      "test_report_contains_real_numbers_and_disclaimer", "test_report_without_override", "test_attendance_for_verdict",
+      "test_sweep_covers_zero_to_hundred_and_matches_engine"]),
+    ("Streamlit interface: tabs, planner, errors", "Run app.py headlessly: tabs and download button, what-if thresholds, comparison table, "
+     "75 % planner (projection, slider copy that never crosses 75 %, clamping, mismatch warning), bad session state, extreme inputs.",
+     "Rendered numbers equal the engine / policy module; reset button recovers from invalid state; no exception at the extremes.",
+     ["test_bad_session_state_shows_error_and_reset", "test_comparison_table_never_triggers_the_policy_banner",
+      "test_comparison_table_uses_engine_and_policy", "test_explanation_steps_follow_inference_and_policy",
+      "test_extremes_render_without_exceptions", "test_five_original_scenarios_are_preserved",
+      "test_main_tabs_and_download_button_exist", "test_planner_attended_is_clamped_when_held_shrinks",
+      "test_planner_button_copies_percentage_without_crossing_75", "test_planner_projects_skip_and_recovery_from_counts",
+      "test_planner_slider_mismatch_is_flagged", "test_what_if_tab_reports_thresholds_from_the_engine"]),
 ]
 
 SHORT_VERDICT = {"CANNOT SKIP THE CLASS!!": "CANNOT SKIP", "PROCEED WITH CAUTION": "CAUTION",
@@ -126,7 +167,7 @@ def build(ctx):
     add(P("The fuzzy engine (`bunk_meter.py`, Python and NumPy) is displayed through a Streamlit application (`app.py`) that shows a "
           "score gauge, the final recommendation, the fuzzification of each input, the active rules with their firing strengths, the "
           "aggregated output with its centroid, and the membership graphs. The implementation is covered by "
-          f"{tests['total']} automated tests ({tests['algo']} algorithm tests and {tests['ui']} interface tests), which all pass."))
+          f"{tests['total']} automated tests ({tests['algo']} engine, policy and model-audit tests and {tests['ui']} presentation and interface tests), which all pass."))
     add(P("**BunkWise is a rule-based fuzzy decision-support tool. It is not a trained machine-learning predictor.** Its membership "
           "functions and rules were written by hand, nothing was learned from data, and the Bunk Score is a fuzzy index rather than a "
           "probability. The system has not been validated against real student decisions or outcomes; its limitations are discussed in "
@@ -622,8 +663,9 @@ function FINAL_RECOMMENDATION(score, attendance):
     add(CODE("python -m unittest discover -s tests -v"))
     add(P(f"When this report was generated, the report generator ran the same test discovery programmatically. The result was: **{tests['total']} tests run, "
           f"{tests['failed']} failures or errors, status {'OK' if not tests['failed'] else 'FAILED'}**, in {tests['seconds']:.1f} s. "
-          f"The suite consists of {tests['algo']} algorithm tests (`tests/test_bunk_meter.py`) and {tests['ui']} interface tests "
-          "(`tests/test_app.py`). Streamlit prints “missing ScriptRunContext” warnings during the interface tests; these are expected "
+          f"The suite consists of {tests['algo']} engine, policy and model-audit tests (`tests/test_bunk_meter.py`, `test_golden.py`, "
+          f"`test_model_audit.py`, `test_policy.py`) and {tests['ui']} presentation and interface tests (`tests/test_insights.py`, "
+          "`tests/test_app.py`). Streamlit prints “missing ScriptRunContext” warnings during the interface tests; these are expected "
           "when a script is run in bare mode by `AppTest` and are not failures."))
     add(H2("Test areas and results"))
     add(P("[[tab:tests]] groups the tests by area and records the result of the run described above."))
@@ -688,8 +730,12 @@ function FINAL_RECOMMENDATION(score, attendance):
           "the presets “Low attendance” (raw score 18.9, which already says “cannot skip”) and “Below 75%, score still high” (raw 76.8, “can skip”)."))
     add(H2("Role of the 75% attendance constraint"))
     add(P("The 75% constraint is applied after defuzzification as a hard rule. At exactly 75% the normal thresholds apply; at 75% or "
-          "above the interface displays a caution that 75% is a minimum and not a guarantee, since BunkWise does not know the number "
-          "of classes attended or held and therefore cannot say whether missing one more class would drop the real percentage below the limit."))
+          "above the interface displays a caution that 75% is a minimum and not a guarantee. The fuzzy engine itself sees only a percentage, "
+          "so a separate **75% planner** (`attendance_policy.py`, not part of the fuzzy inference) accepts the optional counts of classes "
+          "attended A and held H and uses exact rational arithmetic: the attendance after one more missed class is A/(H+1); the number of "
+          "further classes that can be missed while staying at or above 75% is max(0, floor(4A/3 − H)); and the number of consecutive "
+          "classes that must be attended to recover is max(0, 3H − 4A). These closed forms are checked in the test suite against a "
+          "brute-force simulation for every pair of counts up to 120 classes held. The planner never changes the Bunk Score."))
     # ================================================================ 12 LIMITATIONS
     add(H1("Limitations"))
     for title, body in [
@@ -708,12 +754,21 @@ function FINAL_RECOMMENDATION(score, attendance):
         ("The score is not a probability.",
          "The Bunk Score is a fuzzy index. It does not estimate the chance of any event, and a value of 80 does not mean an 80% probability "
          "that skipping is safe."),
-        ("No knowledge of classes attended or held.",
-         "The system sees only an attendance percentage. It cannot compute how many further classes may be missed before the percentage "
-         "falls below the limit, because that depends on the number of classes already held and still to come."),
+        ("The fuzzy engine does not know classes attended or held.",
+         "The fuzzy engine sees only an attendance percentage. The optional 75% planner projects the effect of one more missed class "
+         "from real counts, but it assumes a flat 75% minimum over classes held so far and equal weight per class; it does not know how "
+         "many classes remain, medical-leave rules or how an institution rounds, and it is kept outside the fuzzy score."),
         ("75% is a minimum, not a safety margin.",
          "At 75% or more the recommendation follows the fuzzy verdict, yet an attendance just above 75% may still be one missed class away "
          "from falling below the limit. The interface says so, but the fuzzy rules do not model this distance explicitly."),
+        ("Audited properties of the hand-designed sets.",
+         "A numerical audit (pinned by `tests/test_model_audit.py`) found no formula error, but documented several properties. The attendance "
+         "sets are not a partition of unity: the strongest attendance membership is only 0.07 at 70% and 0.25 at 85%. The reachable raw "
+         "score is about 14.9 to 85.1, never 0 or 100. Between 75% and 100% the raw score can fall by up to about 1.06 points as attendance "
+         "rises (around 82% to 85%, where “ok” falls faster than “safe” rises), which can flip a verdict that sits exactly at a threshold, "
+         "for example credits 2 and temptation 0: 81.75% gives “proceed with caution” and 82% gives “cannot skip”. The 401-point centroid "
+         "differs from a 20 001-point reference by less than 0.1. These are consequences of the hand-designed overlaps, not of the min, max "
+         "or centroid operators; they were documented rather than retuned so that the model matches the rest of this report."),
         ("Small, fixed rule base and shape of the score.",
          "Eighteen rules over three coarse input variables give a coarse model. Because the score is a centroid, it depends on both the "
          "active output set and its clip level, so it is not monotonic in every input (Chapter 11). The “danger” set falls slowly, "
@@ -732,8 +787,10 @@ function FINAL_RECOMMENDATION(score, attendance):
             "broad “safe” attendance range.",
             "**Additional contextual inputs.** Add variables such as proximity of examinations, importance of the particular class, or the "
             "number of classes remaining, which would need new sets and a larger rule base.",
-            "**Real attendance records.** Integrate the number of classes attended and held, so that the tool can reason about how many "
-            "further classes may be missed. This would require privacy protections for personal records.",
+            "**Stored attendance records.** The 75% planner takes counts typed by the user and stores nothing; saving per-subject records or "
+            "importing them would require privacy protections for personal data.",
+            "**Smoother attendance partition.** Re-shape the “ok” and “safe” sets so that they cross at membership 0.5, which would remove the "
+            "small non-monotonic dip described in the limitations; this changes the model and would need new reference values and re-analysis.",
             "**ANFIS or hybrid fuzzy-neural approaches.** Once data exist, an adaptive neuro-fuzzy inference system [[cite:jang93]] could learn "
             "membership parameters; this is a research direction, not an existing feature.",
             "**More systematic evaluation.** Gather user feedback and define measurable criteria for the quality of the recommendations."))
@@ -788,9 +845,9 @@ pip install -r requirements.txt
 streamlit run app.py"""))
     add(P("The application opens in the browser, by default at http://localhost:8501. The optional legacy Matplotlib viewer can be "
           "started with `python bunk_meter.py` (requires Matplotlib). The tests are run with:"))
-    add(CODE("""python -m unittest discover -s tests -v        # all 38 tests
-python -m unittest tests.test_bunk_meter -v     # 31 algorithm tests
-python -m unittest tests.test_app -v            # 7 interface tests"""))
+    add(CODE("""python -m unittest discover -s tests -v        # all tests
+python -m unittest discover -s tests -p "test_bunk_meter.py" -v   # engine tests only
+python -m unittest discover -s tests -p "test_app.py" -v          # interface tests only"""))
     add(H1("Regenerating This Report", num="appendix"))
     add(P("The report is produced by `docs/generate_final_report.py`, which runs the real `infer()` code and the real test suite, "
           "draws the figures with Matplotlib, writes the Markdown and Word versions from a single content definition "

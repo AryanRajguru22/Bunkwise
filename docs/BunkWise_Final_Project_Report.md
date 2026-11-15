@@ -129,7 +129,7 @@ Deciding whether to attend a particular class involves several considerations at
 
 The objectives were to model the decision with linguistic variables and IF–THEN rules, to implement the full Mamdani pipeline faithfully, to keep the final recommendation consistent with a mandatory 75% attendance requirement, and to make every intermediate step visible to the user. The method uses triangular membership functions (eight input sets and three output sets), an 18-rule hand-written rule base, the minimum operator for fuzzy AND, clipping implication, maximum aggregation and centroid defuzzification over a 401-point grid. The raw score is mapped to a three-way fuzzy verdict; a separate, non-fuzzy policy step then enforces that attendance below 75% always yields the recommendation to attend, without altering the raw score.
 
-The fuzzy engine (`bunk_meter.py`, Python and NumPy) is displayed through a Streamlit application (`app.py`) that shows a score gauge, the final recommendation, the fuzzification of each input, the active rules with their firing strengths, the aggregated output with its centroid, and the membership graphs. The implementation is covered by 38 automated tests (31 algorithm tests and 7 interface tests), which all pass.
+The fuzzy engine (`bunk_meter.py`, Python and NumPy) is displayed through a Streamlit application (`app.py`) that shows a score gauge, the final recommendation, the fuzzification of each input, the active rules with their firing strengths, the aggregated output with its centroid, and the membership graphs. The implementation is covered by 89 automated tests (55 engine, policy and model-audit tests and 34 presentation and interface tests), which all pass.
 
 **BunkWise is a rule-based fuzzy decision-support tool. It is not a trained machine-learning predictor.** Its membership functions and rules were written by hand, nothing was learned from data, and the Bunk Score is a fuzzy index rather than a probability. The system has not been validated against real student decisions or outcomes; its limitations are discussed in Chapter 12.
 
@@ -691,7 +691,7 @@ The tests were run on Windows 11 (build 10.0.26300) with Python 3.11.9, NumPy 2.
 python -m unittest discover -s tests -v
 ```
 
-When this report was generated, the report generator ran the same test discovery programmatically. The result was: **38 tests run, 0 failures or errors, status OK**, in 9.6 s. The suite consists of 31 algorithm tests (`tests/test_bunk_meter.py`) and 7 interface tests (`tests/test_app.py`). Streamlit prints “missing ScriptRunContext” warnings during the interface tests; these are expected when a script is run in bare mode by `AppTest` and are not failures.
+When this report was generated, the report generator ran the same test discovery programmatically. The result was: **89 tests run, 0 failures or errors, status OK**, in 18.9 s. The suite consists of 55 engine, policy and model-audit tests (`tests/test_bunk_meter.py`, `test_golden.py`, `test_model_audit.py`, `test_policy.py`) and 34 presentation and interface tests (`tests/test_insights.py`, `tests/test_app.py`). Streamlit prints “missing ScriptRunContext” warnings during the interface tests; these are expected when a script is run in bare mode by `AppTest` and are not failures.
 
 ### 10.2 Test areas and results
 
@@ -709,6 +709,12 @@ Table 10.1 groups the tests by area and records the result of the run described 
 | Scores and raw verdict | Check score range, verdict thresholds, representative scenarios and the documented default score. | Finite scores in [0, 100] on a 21 x 7 x 11 grid; thresholds at 35 and 65; default score 83.82 (2 decimals). | 5 / 5 passed |
 | Attendance-policy override | Check final_recommendation(): below 75 % always attend, normal thresholds at 75 % and above, raw score untouched, invalid arguments rejected. | Below 75: BELOW-MINIMUM text for every score; at 75 and above: equals verdict(); score 76.77 unchanged by the policy step. | 6 / 6 passed |
 | Streamlit interface (AppTest) | Run app.py headlessly and compare what it displays with bunk_meter.infer(): default view, slider changes, all five presets, the override preset, boundary attendance values, warnings and the rule table. | Displayed score, raw verdict and final recommendation equal the engine output; error banner only below 75 %; no script exception or warning. | 7 / 7 passed |
+| Model audit (characterisation) | Pin the audited properties of the hand-designed model: set shapes, coverage, reachable score range, centroid discretisation error, the high raw score just below 75 % and the documented verdict-flip limitation. | Memberships in [0, 1] with peak 1; raw score range about 14.9 to 85.1; 401-point centroid within 0.1 of a 20 001-point reference; 72 % gives raw 76.8 but final ATTEND; largest downward step with rising attendance about 1.06 points. | 7 / 7 passed |
+| Zero-area flag | Check that the neutral fallback is reported through Evaluation.fallback_used instead of being silent. | False for every valid input; zero-area aggregate gives 50 and is detected. | 2 / 2 passed |
+| Rule coverage and original-model regression | Check that each of the 18 rules fires at its own peak, the sets leave no gap, NumPy scalars and float boundaries around 75 behave, and infer() still matches values recorded from the original prototype. | Each rule reaches strength 1 at its peak; no gap at any breakpoint; scores equal the recorded golden values. | 8 / 8 passed |
+| 75 % planner (exact arithmetic) | Check the crisp projection from classes attended and held: exact 75 % boundary, skip and recovery counts against a brute-force simulation for every count up to 120 classes held, invalid counts, no classes held. | 3 of 4 is exactly 75 %; closed-form counts equal simulation; invalid counts raise ValueError; the fuzzy score is unaffected. | 7 / 7 passed |
+| Presentation helpers (insights.py) | Check the explanation text, what-if sweep, multi-subject comparison and Markdown report against the engine, including bad rows and HTML in names. | Every number shown comes from evaluate(); bad rows are flagged, not raised; report contains real values and the disclaimer. | 15 / 15 passed |
+| Streamlit interface: tabs, planner, errors | Run app.py headlessly: tabs and download button, what-if thresholds, comparison table, 75 % planner (projection, slider copy that never crosses 75 %, clamping, mismatch warning), bad session state, extreme inputs. | Rendered numbers equal the engine / policy module; reset button recovers from invalid state; no exception at the extremes. | 12 / 12 passed |
 
 ### 10.3 Algorithm tests
 
@@ -763,7 +769,7 @@ The two outputs answer different questions. The raw verdict answers “what do t
 
 ### 11.5 Role of the 75% attendance constraint
 
-The 75% constraint is applied after defuzzification as a hard rule. At exactly 75% the normal thresholds apply; at 75% or above the interface displays a caution that 75% is a minimum and not a guarantee, since BunkWise does not know the number of classes attended or held and therefore cannot say whether missing one more class would drop the real percentage below the limit.
+The 75% constraint is applied after defuzzification as a hard rule. At exactly 75% the normal thresholds apply; at 75% or above the interface displays a caution that 75% is a minimum and not a guarantee. The fuzzy engine itself sees only a percentage, so a separate **75% planner** (`attendance_policy.py`, not part of the fuzzy inference) accepts the optional counts of classes attended A and held H and uses exact rational arithmetic: the attendance after one more missed class is A/(H+1); the number of further classes that can be missed while staying at or above 75% is max(0, floor(4A/3 − H)); and the number of consecutive classes that must be attended to recover is max(0, 3H − 4A). These closed forms are checked in the test suite against a brute-force simulation for every pair of counts up to 120 classes held. The planner never changes the Bunk Score.
 
 ## 12. Limitations
 
@@ -777,9 +783,11 @@ The 75% constraint is applied after defuzzification as a hard rule. At exactly 7
 
 **The score is not a probability.** The Bunk Score is a fuzzy index. It does not estimate the chance of any event, and a value of 80 does not mean an 80% probability that skipping is safe.
 
-**No knowledge of classes attended or held.** The system sees only an attendance percentage. It cannot compute how many further classes may be missed before the percentage falls below the limit, because that depends on the number of classes already held and still to come.
+**The fuzzy engine does not know classes attended or held.** The fuzzy engine sees only an attendance percentage. The optional 75% planner projects the effect of one more missed class from real counts, but it assumes a flat 75% minimum over classes held so far and equal weight per class; it does not know how many classes remain, medical-leave rules or how an institution rounds, and it is kept outside the fuzzy score.
 
 **75% is a minimum, not a safety margin.** At 75% or more the recommendation follows the fuzzy verdict, yet an attendance just above 75% may still be one missed class away from falling below the limit. The interface says so, but the fuzzy rules do not model this distance explicitly.
+
+**Audited properties of the hand-designed sets.** A numerical audit (pinned by `tests/test_model_audit.py`) found no formula error, but documented several properties. The attendance sets are not a partition of unity: the strongest attendance membership is only 0.07 at 70% and 0.25 at 85%. The reachable raw score is about 14.9 to 85.1, never 0 or 100. Between 75% and 100% the raw score can fall by up to about 1.06 points as attendance rises (around 82% to 85%, where “ok” falls faster than “safe” rises), which can flip a verdict that sits exactly at a threshold, for example credits 2 and temptation 0: 81.75% gives “proceed with caution” and 82% gives “cannot skip”. The 401-point centroid differs from a 20 001-point reference by less than 0.1. These are consequences of the hand-designed overlaps, not of the min, max or centroid operators; they were documented rather than retuned so that the model matches the rest of this report.
 
 **Small, fixed rule base and shape of the score.** Eighteen rules over three coarse input variables give a coarse model. Because the score is a centroid, it depends on both the active output set and its clip level, so it is not monotonic in every input (Chapter 11). The “danger” set falls slowly, which is why the policy rule had to be added separately. The 75% rule itself was taken from the course handout; no other institutional policy is modelled.
 
@@ -791,13 +799,14 @@ All items in this chapter are **proposed work**. None of them is implemented in 
 - **Survey-based tuning and evaluation.** Collect structured responses from students about how they would judge example situations, compare them with the Bunk Score, and tune the sets and rules accordingly, with appropriate consent.
 - **Trapezoidal membership functions.** Replace some triangles by trapezoids to obtain plateaus of full membership, for example for a broad “safe” attendance range.
 - **Additional contextual inputs.** Add variables such as proximity of examinations, importance of the particular class, or the number of classes remaining, which would need new sets and a larger rule base.
-- **Real attendance records.** Integrate the number of classes attended and held, so that the tool can reason about how many further classes may be missed. This would require privacy protections for personal records.
+- **Stored attendance records.** The 75% planner takes counts typed by the user and stores nothing; saving per-subject records or importing them would require privacy protections for personal data.
+- **Smoother attendance partition.** Re-shape the “ok” and “safe” sets so that they cross at membership 0.5, which would remove the small non-monotonic dip described in the limitations; this changes the model and would need new reference values and re-analysis.
 - **ANFIS or hybrid fuzzy-neural approaches.** Once data exist, an adaptive neuro-fuzzy inference system [20] could learn membership parameters; this is a research direction, not an existing feature.
 - **More systematic evaluation.** Gather user feedback and define measurable criteria for the quality of the recommendations.
 
 ## 14. Conclusion
 
-BunkWise implements a complete Mamdani fuzzy inference system for a small, relatable decision. Three inputs are fuzzified with triangular membership functions, 18 hand-written rules are evaluated with the minimum operator, the clipped consequents are merged by maximum aggregation, and the centroid gives a raw Bunk Score between 0 and 100. A separate, crisp policy step enforces the mandatory 75% attendance requirement without altering that raw score. A Streamlit interface exposes the whole process, from membership degrees to the aggregated output, and an automated suite of 38 tests, all passing, checks that the engine behaves as specified and that the interface agrees with it.
+BunkWise implements a complete Mamdani fuzzy inference system for a small, relatable decision. Three inputs are fuzzified with triangular membership functions, 18 hand-written rules are evaluated with the minimum operator, the clipped consequents are merged by maximum aggregation, and the centroid gives a raw Bunk Score between 0 and 100. A separate, crisp policy step enforces the mandatory 75% attendance requirement without altering that raw score. A Streamlit interface exposes the whole process, from membership degrees to the aggregated output, and an automated suite of 89 tests, all passing, checks that the engine behaves as specified and that the interface agrees with it.
 
 The project demonstrates how fuzzy logic can turn linguistic knowledge into a graded, explainable computation, and how a numerical centroid (83.82) relates to its analytic value (83.75) in the worked example. What it does not demonstrate is that the rules are right: the membership functions and rules are subjective, the score has not been validated against real decisions, and the tool knows nothing about actual classes attended or held. BunkWise should therefore be regarded as an educational decision-support tool and a demonstration of soft-computing technique, not as an authority on attendance decisions.
 
@@ -887,9 +896,9 @@ streamlit run app.py
 The application opens in the browser, by default at http://localhost:8501. The optional legacy Matplotlib viewer can be started with `python bunk_meter.py` (requires Matplotlib). The tests are run with:
 
 ```text
-python -m unittest discover -s tests -v        # all 38 tests
-python -m unittest tests.test_bunk_meter -v     # 31 algorithm tests
-python -m unittest tests.test_app -v            # 7 interface tests
+python -m unittest discover -s tests -v        # all tests
+python -m unittest discover -s tests -p "test_bunk_meter.py" -v   # engine tests only
+python -m unittest discover -s tests -p "test_app.py" -v          # interface tests only
 ```
 
 ## Appendix D: Regenerating This Report

@@ -21,23 +21,33 @@ step-by-step explanation of how it got there.
 - Explainability tabs: membership degrees per input, active rules with firing strengths, aggregated
   output and centroid, interactive membership graphs, short "how it works" text.
 - Five illustrative demo scenarios (they set the sliders and re-run the same inference).
+- **75% planner**: enter classes attended and held to see your exact attendance, what one more missed class
+  would do, how many classes you could still miss, or how many you must attend in a row to get back to 75%.
+  This is exact integer arithmetic and is not part of the fuzzy inference.
+- What-if sweep over attendance, a multi-subject comparison table and a downloadable Markdown decision report.
 
 ## Tech stack
 
-Python · Streamlit (UI) · NumPy (output universe and centroid) · Plotly (charts) · pandas (tables).
-Tests use the standard-library `unittest` (plus Streamlit's `AppTest`).
+Python 3.11+ · Streamlit (UI) · NumPy (output universe and centroid) · Plotly (charts) · pandas (tables).
+Tests use the standard-library `unittest` (plus Streamlit's `AppTest`). Playwright is only needed for the
+optional real-browser check.
 
 ## Project structure
 
 ```
-app.py                 Streamlit interface (displays results of bunk_meter.infer)
-bunk_meter.py          Fuzzy core: trimf, INPUTS, OUTPUT_SETS, RULES, infer, defuzzify, verdict,
-                       final_recommendation (75% policy step)
-tests/                 unittest suite (algorithm + UI consistency)
-docs/                  Project report and AISC viva guide (PDF, Markdown, generator script)
+app.py                 Streamlit interface; displays what bunk_meter.evaluate() returns
+bunk_meter.py          Fuzzy core (no Streamlit): trimf, INPUTS, OUTPUT_SETS, RULES, infer, defuzzify,
+                       verdict, final_recommendation (75% policy step), evaluate -> Evaluation
+attendance_policy.py   Crisp 75% projection from classes attended / held (exact Fraction arithmetic)
+insights.py            Presentation helpers built on the engine: explanation text, what-if sweep,
+                       multi-subject comparison, Markdown report
+tests/                 unittest suite: engine, rule base, policy, golden values, model audit, insights, UI
+tests/browser_check.py Optional real-browser end-to-end check (Playwright; not part of unittest)
+docs/                  Final report (MD/DOCX/PDF + generators), viva guide, report figures and screenshots
+Dockerfile             Production image (see Deployment)
 requirements.txt       Runtime dependencies
-requirements-docs.txt  Only needed to regenerate the PDF
-.streamlit/config.toml Theme
+requirements-docs.txt  Only needed to regenerate the report / viva guide
+.streamlit/config.toml Theme and production server settings
 ```
 
 ## Setup (Windows, PowerShell)
@@ -51,11 +61,31 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Run the tests:
+Run the tests (89 at the time of writing; the count is what `unittest` reports, not a promise):
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+Streamlit's AppTest prints harmless `missing ScriptRunContext` warnings while it runs.
+
+Optional real-browser check (desktop, tablet and phone widths, horizontal-overflow check, scenarios,
+planner, report download). Needs `pip install playwright` and Microsoft Edge (or set `BROWSER_CHANNEL=chrome`):
+
+```powershell
+streamlit run app.py --server.port 8501    # in one terminal
+python tests/browser_check.py http://localhost:8501
+```
+
+## Deployment
+
+- **Streamlit Community Cloud**: connect the repository, main file `app.py`; dependencies come from
+  `requirements.txt`. No secrets are needed (the app has no accounts, database or external calls).
+- **Docker** (Render, Railway, Cloud Run, ...): `docker build -t bunkwise .` then
+  `docker run -p 8501:8501 bunkwise`. The image runs as a non-root user and honours `$PORT`.
+  If you add a new Python module, add it to the `COPY` line in the `Dockerfile`.
+- Production server settings (headless, XSRF protection, no error details for visitors, no usage
+  statistics) are in `.streamlit/config.toml`. Never commit `.streamlit/secrets.toml` (it is git-ignored).
 
 Rebuild the viva guide PDF (optional): `pip install -r requirements-docs.txt` (ReportLab, plus matplotlib for a
 fallback font) then `python docs/generate_viva_guide.py`. It writes the PDF and the Markdown together.
@@ -90,6 +120,29 @@ above the normal thresholds apply, but 75 % is only a minimum: BunkWise does not
 attended or were held, so it makes no claim about future eligibility. The score is an index, not a
 probability, and nothing is trained: it is a hand-built fuzzy system, not a machine-learning model.
 
+### Model audit (what the numbers look like)
+
+The membership functions and rules were audited rather than retuned. Facts, each pinned by a test in
+`tests/test_model_audit.py`:
+
+- All membership values are in [0, 1], every set peaks at 1, and every point of every input range has
+  non-zero membership in at least one set (coverage). The sets are **not** a partition of unity: the strongest
+  attendance membership is only 0.07 at 70% and 0.25 at 85%.
+- The centroid uses 401 sample points; against a 20 001-point reference the difference stays under 0.1 score points.
+- The reachable raw score is about **14.9 to 85.1**, never 0 or 100: centroids of shoulder-shaped output sets cannot
+  reach the ends of the axis. Read the gauge as a relative index.
+- Below 75% attendance the raw score can be misleadingly high (72%, 2.5 credits, temptation 9 gives 76.8,
+  "CAN SKIP") because `danger = (0, 0, 75)` fades slowly. The raw verdict is shown unchanged and the 75% rule
+  overrides the final recommendation, so a user never gets a permissive final answer there.
+- **Known limitation at or above 75%:** where `ok` falls faster than `safe` rises (about 82 to 85%) the raw score can
+  dip by up to about 1.06 points as attendance rises, which can flip a verdict that sits right at a threshold
+  (for example credits 2, temptation 0: 81.75% gives "PROCEED WITH CAUTION", 82% gives "CANNOT SKIP"). It is a
+  consequence of the hand-designed overlaps, not a bug in min/max/centroid. A smoother partition (for example `ok` and
+  `safe` crossing at 0.5) would remove it, but it would change the model that the report documents, so it is listed
+  as future work instead.
+- Same-consequent rules combined with `max` make the score move by up to about 0.9 points the "wrong" way when
+  temptation rises in the danger zone.
+
 ## Changes from the original prototype
 
 The original matplotlib program is in the first Git commit. The fuzzy sets, 18 rules, min/max operators,
@@ -106,7 +159,13 @@ corrected to match the real set bounds, verdict colours (red = cannot skip, gree
 - The attendance set `danger = (0, 0, 75)` falls off slowly, so a student slightly below 75 % can still get
   a high *raw* score (see the "Below 75%, score still high" scenario). That is why the 75 % rule is applied
   afterwards as a hard constraint in `final_recommendation()` instead of altering the fuzzy algorithm.
-- The 75 % rule is taken from the course handout; no other college policy is modelled.
+- The 75 % rule is taken from the course handout; no other college policy is modelled. The planner assumes a flat
+  minimum over all classes held so far and equal weight per class.
+- See *Model audit* above for the weak attendance coverage and the small non-monotonic dips.
+- No labelled data exists, so no accuracy, precision or user-validation claim is made.
+- `tests/browser_check.py` drives the running app in Microsoft Edge at 1280, 768 and 390 px widths (scenarios,
+  planner, report download, no horizontal overflow, no console errors). It is a manual, optional check; the
+  maintainers have not deployed this repository to Streamlit Community Cloud, so that path is documented but untested.
 
 ## Contributing
 

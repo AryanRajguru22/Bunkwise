@@ -13,6 +13,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+import attendance_policy as ap
 import bunk_meter as bm
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8501"
@@ -101,11 +102,27 @@ def main():
                 check(no_overflow(page), f"[{name}] scenario {label}: no horizontal overflow")
 
             # tabs
-            for tab in ("What if?", "Compare subjects", "Inside the engine", "Fuzzification", "Active rules",
+            for tab in ("What if?", "75% planner", "Compare subjects", "Inside the engine", "Fuzzification", "Active rules",
                         "Aggregation & centroid", "Membership graphs", "About & limits", "Why this result"):
                 page.get_by_role("tab", name=tab).first.click()
                 page.wait_for_timeout(700)
                 check(no_overflow(page), f"[{name}] tab '{tab}': no horizontal overflow")
+
+            # 75% planner: type real counts, compare with the policy module
+            page.get_by_role("tab", name="75% planner").first.click()
+            page.wait_for_timeout(700)
+            for label, value in (("Classes held so far", "300"), ("Classes attended", "225")):
+                box = page.get_by_label(label)
+                box.fill(value)
+                box.press("Enter")
+                page.wait_for_timeout(900)
+            proj = ap.project(225, 300)
+            settle(page)
+            check(f"{proj.percent_now:.2f}%" in body(page) and f"{proj.percent_if_skip:.2f}%" in body(page),
+                  f"[{name}] planner shows {proj.percent_now:.2f}% now and {proj.percent_if_skip:.2f}% after a skip")
+            check("below 75%" in body(page).lower() and not proj.meets_if_skip, f"[{name}] planner warns that a skip breaks 75%")
+            check(no_overflow(page), f"[{name}] planner: no horizontal overflow")
+            page.get_by_role("tab", name="Why this result").first.click()
 
             # download report
             with page.expect_download() as dl:
