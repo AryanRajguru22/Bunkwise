@@ -209,6 +209,7 @@ class Evaluation:
     final_text: str      # policy-aware recommendation
     final_colour: str
     below_minimum: bool  # True when the hard 75% constraint overrides the fuzzy verdict
+    fallback_used: bool = False  # True only if the aggregate had zero area and defuzzify() returned the neutral 50
 
     @property
     def overridden(self):
@@ -224,7 +225,7 @@ def evaluate(attendance, credits, temptation):
     final_text, final_colour = final_recommendation(score, attendance)
     return Evaluation(attendance, credits, temptation, fuzzy, sorted(fired, reverse=True), out_strength,
                       xs, agg, score, raw_text, raw_colour, final_text, final_colour,
-                      below_attendance_minimum(attendance))
+                      below_attendance_minimum(attendance), fallback_used=not agg.sum() > 0)
 
 
 # =====================================================================

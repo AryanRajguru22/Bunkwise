@@ -11,7 +11,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY app.py bunk_meter.py insights.py ./
+COPY app.py bunk_meter.py insights.py attendance_policy.py ./
 COPY .streamlit ./.streamlit
 
 # Run as an unprivileged user.

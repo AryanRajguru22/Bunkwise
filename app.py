@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import attendance_policy as policy
 import bunk_meter as bm
 import insights
 
@@ -90,8 +91,18 @@ PRESETS = [
     ("Easy subject, very safe", 95.0, 1.0, 9.0, "High attendance, but a 1-credit subject is fragile."),
 ]
 
-for key, value in DEFAULTS.items():
+for key, value in {**DEFAULTS, "planner_attended": 39, "planner_held": 50}.items():
     st.session_state.setdefault(key, value)
+
+
+def use_counts_in_slider():
+    """Button callback: copy the planner's attendance into the slider, rounded DOWN to the slider's 0.5 step.
+
+    75 is a multiple of 0.5, so rounding down never moves a value across the 75% line in either direction.
+    """
+    pct = policy.percent(int(st.session_state["planner_attended"]), int(st.session_state["planner_held"]))
+    if pct is not None:
+        st.session_state["attendance"] = float(int(pct * 2) / 2)
 
 
 def apply_preset(attendance, credits, temptation):
@@ -209,7 +220,8 @@ with right:
         else:
             st.caption(f"Attendance is at or above {bm.ATTENDANCE_MIN}%, so the final recommendation "
                        "follows the fuzzy verdict. 75% is a minimum, not a guarantee that skipping another "
-                       "class is safe: BunkWise does not know your classes attended or held.")
+                       "class is safe: enter your classes attended and held in the **75% planner** tab "
+                       "to see what one more missed class would do.")
 
     with st.container(key="card-score", border=False):
         st.markdown("#### Raw fuzzy Bunk Score")
@@ -226,8 +238,8 @@ with right:
 values = {"attendance": ev.attendance, "credits": ev.credits, "temptation": ev.temptation}
 st.write("")
 with st.container(key="card-explain", border=False):
-    tab_why, tab_what, tab_cmp, tab_engine, tab_about = st.tabs(
-        ["Why this result", "What if?", "Compare subjects", "Inside the engine", "About & limits"])
+    tab_why, tab_what, tab_plan, tab_cmp, tab_engine, tab_about = st.tabs(
+        ["Why this result", "What if?", "75% planner", "Compare subjects", "Inside the engine", "About & limits"])
 
     # ---- plain-English explanation
     with tab_why:
@@ -269,6 +281,47 @@ with st.container(key="card-explain", border=False):
                 st.markdown(f"- With {ev.credits:g} credits and temptation {ev.temptation:g}, the raw score first "
                             f"reaches {target} (*{meaning}*) at about {first:g}% attendance.")
         st.caption("These readings come from the fuzzy model, which is hand-designed. They are not a promise.")
+
+    # ---- crisp 75% policy projection from real class counts
+    with tab_plan:
+        st.caption(f"The {bm.ATTENDANCE_MIN}% rule is exact arithmetic on classes attended and held. This tab does "
+                   "not use fuzzy logic and never changes the Bunk Score.")
+        c1, c2 = st.columns(2)
+        held_n = c2.number_input("Classes held so far", min_value=0, max_value=1000, step=1, key="planner_held")
+        if st.session_state["planner_attended"] > held_n:  # keep the stored value inside the widget's range
+            st.session_state["planner_attended"] = int(held_n)
+        att_n = c1.number_input("Classes attended", min_value=0, max_value=int(held_n), step=1,
+                                key="planner_attended")
+        proj = policy.project(int(att_n), int(held_n))
+        if proj.percent_now is None:
+            st.info("No classes held yet, so there is no attendance percentage to project.")
+        else:
+            st.markdown(f"**Attendance from these counts: {proj.percent_now:.2f}%**")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("If you skip the next class", f"{proj.percent_if_skip:.2f}%")
+            m2.metric("If you attend the next class", f"{proj.percent_if_attend:.2f}%")
+            if proj.meets_now:
+                m3.metric(f"Classes you could still miss and stay at {bm.ATTENDANCE_MIN}%+", proj.safe_skips)
+                if proj.meets_if_skip:
+                    st.success(f"Skipping the next class keeps you at or above {bm.ATTENDANCE_MIN}% "
+                               f"({proj.percent_if_skip:.2f}%).", icon=":material/check_circle:")
+                else:
+                    st.error(f"Skipping the next class would drop you below {bm.ATTENDANCE_MIN}% "
+                             f"({proj.percent_if_skip:.2f}%).", icon=":material/block:")
+            else:
+                m3.metric(f"Classes to attend in a row to reach {bm.ATTENDANCE_MIN}%", proj.to_recover)
+                st.error(f"Below {bm.ATTENDANCE_MIN}% already. Attend the next {proj.to_recover} class"
+                         f"{'es' if proj.to_recover != 1 else ''} without missing any to get back to "
+                         f"{bm.ATTENDANCE_MIN}%.", icon=":material/block:")
+            if abs(proj.percent_now - ev.attendance) >= 0.5:
+                st.warning(f"The attendance slider is at {ev.attendance:.1f}% but these counts give "
+                           f"{proj.percent_now:.2f}%. The Bunk Score above uses the slider.",
+                           icon=":material/sync_problem:")
+            st.button("Use this attendance in the slider", on_click=use_counts_in_slider,
+                      help="Copies the percentage into the slider, rounded down to its 0.5 step (this never "
+                           f"moves you across the {bm.ATTENDANCE_MIN}% line).")
+        st.caption("Assumes every upcoming class counts equally and the rule is a flat minimum over classes "
+                   "held so far. Your institution may count differently (term totals, medical leave, rounding).")
 
     # ---- several subjects at once
     with tab_cmp:
@@ -400,7 +453,7 @@ with st.container(key="card-explain", border=False):
 
             **Limits:** the sets and rules were written by hand, not learned from data. The score is an
             index, not a probability, and 75% is a minimum, not a guarantee that skipping is safe
-            (BunkWise does not know how many classes you attended or were held). Credits are only a proxy
+            (the *75% planner* tab projects it from your real class counts). Credits are only a proxy
             for how much a class matters, and temptation is self-reported.
 
             **Privacy:** BunkWise has no accounts and no database. What you enter lives only in your

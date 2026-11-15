@@ -181,6 +181,52 @@ class TestApp(unittest.TestCase):
             self.assertFalse(at.exception, (att, cred, temp))
             self.check_matches_infer(at, att, cred, temp)
 
+    def set_counts(self, at, attended, held):
+        at.number_input(key="planner_held").set_value(held)
+        at.run()
+        at.number_input(key="planner_attended").set_value(attended)
+        at.run()
+        self.assertFalse(at.exception, (attended, held))
+
+    def test_planner_projects_skip_and_recovery_from_counts(self):
+        import attendance_policy as ap
+        at = load()
+        for att, held in ((39, 50), (3, 4), (1, 2), (3, 10)):
+            self.set_counts(at, att, held)
+            p = ap.project(att, held)
+            self.assertIn(f"{p.percent_now:.2f}%", page_text(at))
+            msgs = " ".join(e.value for e in at.error) + " ".join(s.value for s in at.success)
+            if p.meets_now:
+                self.assertIn(f"{p.percent_if_skip:.2f}%", msgs)
+            else:
+                self.assertIn(f"Attend the next {p.to_recover} class", msgs)
+
+    def test_planner_button_copies_percentage_without_crossing_75(self):
+        at = load()
+        label = "Use this attendance in the slider"
+        self.set_counts(at, 224, 300)                      # 74.67%: rounds down to 74.5, still below 75
+        next(b for b in at.button if b.label == label).click()
+        at.run()
+        self.assertEqual(at.slider(key="attendance").value, 74.5)
+        self.set_counts(at, 225, 300)                      # exactly 75%: stays at 75.0
+        next(b for b in at.button if b.label == label).click()
+        at.run()
+        self.assertEqual(at.slider(key="attendance").value, 75.0)
+        self.assertFalse(at.exception)
+
+    def test_planner_attended_is_clamped_when_held_shrinks(self):
+        at = load()
+        at.number_input(key="planner_held").set_value(10)
+        at.run()
+        self.assertFalse(at.exception)
+        self.assertLessEqual(at.number_input(key="planner_attended").value, 10)
+
+    def test_planner_slider_mismatch_is_flagged(self):
+        at = load()                                        # slider 78%, counts 39/50 = 78%: consistent
+        self.assertEqual(len(at.warning), 0)
+        self.set_counts(at, 20, 50)
+        self.assertTrue(any("slider" in w.value for w in at.warning))
+
     @staticmethod
     def presets():
         # Parse PRESETS from the app source so the test follows the app without importing Streamlit UI code.
